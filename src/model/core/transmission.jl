@@ -341,4 +341,17 @@ function transmission!(EP::Model, inputs::Dict, setup::Dict)
 		end
 	end # End if(TRANS_LOSS_SEGS > 0) block
 
+	#=
+	if setup["HurdleRate"] = 1
+		# 1. Summarize total flow per line
+		@expression(EP, eTotalFlow[l in 1:L], sum(vFLOW[l, t] for t in 1:T))
+
+		# 2. Sum costs
+		@expression(EP, eHurdleCosts[l in 1:L], inputs["HURDLE_RATE"][l]*eTotalFlow[l])
+		@expression(EP, eTotalHurdleCosts, sum(eHurdleCosts[l] for l in 1:L))
+
+		# 3. Add to total costs
+		EP[:eObj] += eTotalHurdleCosts
+	end
+	=#
 end

@@ -212,14 +212,19 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 			inputs_gen["dfGen"][!,:Start_Cost_per_MW] = gen_in[!,:Start_Cost_per_MW]/ModelScalingFactor # Convert to $ million/GW with objective function in millions
 		end
 
+		# commented out based upon qingyu code
+		#=
 		# Fuel consumed on start-up (million BTUs per MW per start) if unit commitment is modelled
 		start_fuel = convert(Array{Float64}, collect(skipmissing(gen_in[!,:Start_Fuel_MMBTU_per_MW])))
 		# Fixed cost per start-up ($ per MW per start) if unit commitment is modelled
 		start_cost = convert(Array{Float64}, collect(skipmissing(inputs_gen["dfGen"][!,:Start_Cost_per_MW])))
 		inputs_gen["C_Start"] = zeros(Float64, G, inputs_gen["T"])
 		inputs_gen["dfGen"][!,:CO2_per_Start] = zeros(Float64, G)
+		=#
 	end
 
+	# previous code
+	#=
 	# Heat rate of all resources (million BTUs/MWh)
 	heat_rate = convert(Array{Float64}, collect(skipmissing(gen_in[!,:Heat_Rate_MMBTU_per_MWh])) )
 	# Fuel used by each resource
@@ -250,6 +255,20 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 			# Setup[ParameterScale] =0, inputs_gen["dfGen"][g,:Cap_Size] is MW, fuel_CO2[fuel_type[g]] is tons/MMBTU, start_fuel is MMBTU/MW,
 			#   thus the overall is MTons/GW, and thus inputs_gen["dfGen"][g,:CO2_per_Start] is ton
 		end
+	end =#
+
+	# if piecewise fuel consumption is on, 
+	# set the C_Fuel_Per_MWh to be zero 
+	# because we will account for fuel consumption in a separate module. 
+	if (setup["PieceWiseHeatRate"] == 1) & (!isempty(inputs_gen["THERM_COMMIT"]))
+		# if the Parameter scaling turned on, the slope stay the same, 
+		# but intercepts should be divided by modeling scale parameter
+		if setup["ParameterScale"] == 1 
+			inputs_gen["dfGen"][!,:Intercept1] = gen_in[!,:Intercept1]/ModelScalingFactor
+			inputs_gen["dfGen"][!,:Intercept2] = gen_in[!,:Intercept2]/ModelScalingFactor
+			inputs_gen["dfGen"][!,:Intercept3] = gen_in[!,:Intercept3]/ModelScalingFactor
+		end
 	end
+
 	println(filename * " Successfully Read!")
 end

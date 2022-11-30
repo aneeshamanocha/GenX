@@ -109,6 +109,8 @@ include("model/core/non_served_energy.jl")
 include("model/core/ucommit.jl")
 include("model/core/emissions.jl")
 
+include("model/core/co2.jl")
+include("model/core/fuel.jl")
 include("model/core/reserves.jl")
 
 include("model/core/transmission.jl")

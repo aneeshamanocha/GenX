@@ -96,6 +96,13 @@ function load_network_data!(setup::Dict, path::AbstractString, inputs_nw::Dict)
         inputs_nw["NO_EXPANSION_LINES"] = findall(inputs_nw["pMax_Line_Reinforcement"].<0)
     end
 
+    # put hurdle rate
+    #=
+    if setup["HurdleRate"] == 1
+        inputs_nw["HURDLE_RATE"]  = to_floats(:HurdleRate)
+    end
+    =#
+
     println(filename * " Successfully Read!")
 
     return network_var

@@ -36,6 +36,15 @@ function load_fuels_data!(setup::Dict, path::AbstractString, inputs::Dict)
     fuels = names(fuels_in)[2:end]
     costs = Matrix(fuels_in[2:end, 2:end])
     CO2_content = fuels_in[1, 2:end] # tons CO2/MMBtu
+
+    # redo for fuel constraint
+    #=
+    fuels = names(fuels_in)[2:end]
+    costs = Matrix(fuels_in[3:end, 2:end])
+    CO2_content = fuels_in[1, 2:end] # tons CO2/MMBtu
+    Fuel_Max = fuels_in[2, 2:end] # tons MMBtu
+    =#
+
     fuel_costs = Dict{AbstractString, Array{Float64}}()
     fuel_CO2 = Dict{AbstractString, Float64}()
 
@@ -45,6 +54,15 @@ function load_fuels_data!(setup::Dict, path::AbstractString, inputs::Dict)
             fuel_costs[fuels[i]] = costs[:,i] / scale_factor
             # fuel_CO2 is kton/MMBTU with scaling, or ton/MMBTU without scaling.
             fuel_CO2[fuels[i]] = CO2_content[i] / scale_factor
+
+            #=
+            # fuel constraint
+            if setup["FuelMax"] == 1
+                fuel_max[fuels[i]] = Fuel_Max[i]/ scale_factor
+            end
+            inputs["fuel_max"] = fuel_max
+            =# 
+
     end
 
     inputs["fuels"] = fuels
