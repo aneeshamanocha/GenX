@@ -54,9 +54,9 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     # Fuel constraint
     #=
     if setup["FuelMax"] == 1
-        FUELS_CONSTRAINED = inputs["fuel_costs"] != 0 # need to check syntax
+        FUELS_CONSTRAINED = inputs["fuel_max"] != 0 # need to check syntax
         @constraint(EP, eFuelMaximum[f in 1:FUELS_CONSTRAINED],
-        eFuelConsumptionYear <= inputs["fuel_costs"][f])
+        eFuelConsumptionYear[f] <= inputs["fuel_max"][f])
     end=#
 
     

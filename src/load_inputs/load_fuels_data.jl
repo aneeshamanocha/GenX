@@ -42,7 +42,7 @@ function load_fuels_data!(setup::Dict, path::AbstractString, inputs::Dict)
     fuels = names(fuels_in)[2:end]
     costs = Matrix(fuels_in[3:end, 2:end])
     CO2_content = fuels_in[1, 2:end] # tons CO2/MMBtu
-    Fuel_Max = fuels_in[2, 2:end] # tons MMBtu
+    Fuel_Max = fuels_in[2, 2:end] # tons 
     =#
 
     fuel_costs = Dict{AbstractString, Array{Float64}}()
