@@ -107,7 +107,11 @@ include("model/core/discharge/investment_discharge.jl")
 
 include("model/core/non_served_energy.jl")
 include("model/core/ucommit.jl")
-include("model/core/emissions.jl")
+#include("model/core/emissions.jl")
+
+
+include("model/core/co2.jl")
+include("model/core/fuel.jl")
 
 include("model/core/co2.jl")
 include("model/core/fuel.jl")
@@ -190,6 +194,8 @@ include("write_outputs/ucommit/write_commit.jl")
 include("write_outputs/ucommit/write_shutdown.jl")
 include("write_outputs/ucommit/write_start.jl")
 
+
+include("write_outputs/write_fuel_consumption.jl")
 include("write_outputs/write_outputs.jl")
 
 #Just for unit testing; Under active development

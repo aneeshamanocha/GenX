@@ -269,6 +269,5 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 			inputs_gen["dfGen"][!,:Intercept3] = gen_in[!,:Intercept3]/ModelScalingFactor
 		end
 	end
-
 	println(filename * " Successfully Read!")
 end
