@@ -136,8 +136,11 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 	if setup["UCommit"] > 0
 		ucommit!(EP, inputs, setup)
 	end
+	
+	fuel!(EP, inputs, setup)
+	co2!(EP, inputs, setup)
 
-	emissions!(EP, inputs)
+	#emissions!(EP, inputs)
 
 	if setup["Reserves"] > 0
 		reserves!(EP, inputs, setup)
