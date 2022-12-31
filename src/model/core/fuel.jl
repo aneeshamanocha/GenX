@@ -52,12 +52,12 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
         sum(inputs["omega"][t] * EP[:eFuelConsumption][f, t] for t in 1:T))
 
     # Fuel constraint
-    #=
+    
     if setup["FuelMax"] == 1
-        FUELS_CONSTRAINED = inputs["fuel_max"] != 0 # need to check syntax
-        @constraint(EP, eFuelMaximum[f in 1:FUELS_CONSTRAINED],
-        eFuelConsumptionYear[f] <= inputs["fuel_max"][f])
-    end=#
+        @expression(EP, eFUELCONSTRAINED[f in 1:FUEL], inputs["fuel_max"][inputs["fuels"][f]] .>= 0)
+        @constraint(EP, eFuelMaximum[f in findall(x->x==1, eFUELCONSTRAINED)],
+        eFuelConsumptionYear[f] <= inputs["fuel_max"][inputs["fuels"][f]])
+    end
 
     
     # fuel_cost is in $/MMBTU (k$/MMBTU or M$/kMMBTU if scaled)

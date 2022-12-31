@@ -1010,7 +1010,11 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                 ### TDR_Results/Fuels_data.csv
                 fuel_in = DataFrame(CSV.File(joinpath(inpath, "Inputs", "Inputs_p$per", "Fuels_data.csv"), header=true), copycols=true)
                 select!(fuel_in, Not(:Time_Index))
-                SepFirstRow = DataFrame(fuel_in[1, :])
+                if mysetup["FuelMax"] == 1
+                    SepFirstRow = DataFrame(fuel_in[1:2, :])
+                else
+                    SepFirstRow = DataFrame(fuel_in[1, :])
+                end
                 NewFuelOutput = vcat(SepFirstRow, FPOutputData)
                 rename!(NewFuelOutput, FuelCols)
                 insertcols!(NewFuelOutput, 1, :Time_Index => 0:size(NewFuelOutput,1)-1)
@@ -1070,7 +1074,11 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
 
             fuel_in = DataFrame(CSV.File(joinpath(inpath,"Inputs",input_stage_directory,"Fuels_data.csv"), header=true), copycols=true)
             select!(fuel_in, Not(:Time_Index))
-            SepFirstRow = DataFrame(fuel_in[1, :])
+            if mysetup["FuelsMax"] == 1
+                SepFirstRow = DataFrame(fuel_in[1:2, :])
+            else
+                SepFirstRow = DataFrame(fuel_in[1, :])
+            end
             NewFuelOutput = vcat(SepFirstRow, FPOutputData)
             rename!(NewFuelOutput, FuelCols)
             insertcols!(NewFuelOutput, 1, :Time_Index => 0:size(NewFuelOutput,1)-1)
@@ -1126,7 +1134,11 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
 
         fuel_in = DataFrame(CSV.File(joinpath(inpath, "Fuels_data.csv"), header=true), copycols=true)
         select!(fuel_in, Not(:Time_Index))
-        SepFirstRow = DataFrame(fuel_in[1, :])
+        if mysetup["FuelMax"] == 1
+            SepFirstRow = DataFrame(fuel_in[1:2, :])
+        else
+            SepFirstRow = DataFrame(fuel_in[1, :])
+        end
         NewFuelOutput = vcat(SepFirstRow, FPOutputData)
         rename!(NewFuelOutput, FuelCols)
         insertcols!(NewFuelOutput, 1, :Time_Index => 0:size(NewFuelOutput,1)-1)

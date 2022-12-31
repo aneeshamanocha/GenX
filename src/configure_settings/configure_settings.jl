@@ -68,7 +68,7 @@ function configure_settings(settings_path::String)
     # CO2 carbon capture and sequestration; 0 = not active; 1 = active, co2 capture will be modeled, cost and caputred emission will be printed;
     set_default_if_absent!(settings, "CO2Capture", 0)
     # Fuel max; 0 = not active; 1 = active
-    #set_default_if_absent!(settings, "FuelMax", 0)
+    set_default_if_absent!(settings, "FuelMax", 0)
     # Hurdle Rate; 0 = not active; 1 = active
     #set_default_if_absent!(settings, "HurdleRate", 0)
 

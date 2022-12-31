@@ -33,17 +33,21 @@ function load_fuels_data!(setup::Dict, path::AbstractString, inputs::Dict)
     fuels_in = DataFrame(CSV.File(file_path, header=true), copycols=true)
 
     # Fuel costs & CO2 emissions rate for each fuel type
+
     fuels = names(fuels_in)[2:end]
-    costs = Matrix(fuels_in[2:end, 2:end])
     CO2_content = fuels_in[1, 2:end] # tons CO2/MMBtu
+    
+    # slight fuel constraint changes
+    if setup["FuelMax"] == 1
+        costs = Matrix(fuels_in[3:end, 2:end])
+        Fuel_Max = fuels_in[2, 2:end] # tons 
+        fuel_max = Dict{AbstractString, Float64}()
+    else
+        costs = Matrix(fuels_in[2:end, 2:end])
+    end
+    
 
     # redo for fuel constraint
-    #=
-    fuels = names(fuels_in)[2:end]
-    costs = Matrix(fuels_in[3:end, 2:end])
-    CO2_content = fuels_in[1, 2:end] # tons CO2/MMBtu
-    Fuel_Max = fuels_in[2, 2:end] # tons 
-    =#
 
     fuel_costs = Dict{AbstractString, Array{Float64}}()
     fuel_CO2 = Dict{AbstractString, Float64}()
@@ -55,19 +59,23 @@ function load_fuels_data!(setup::Dict, path::AbstractString, inputs::Dict)
             # fuel_CO2 is kton/MMBTU with scaling, or ton/MMBTU without scaling.
             fuel_CO2[fuels[i]] = CO2_content[i] / scale_factor
 
-            #=
+            
             # fuel constraint
             if setup["FuelMax"] == 1
                 fuel_max[fuels[i]] = Fuel_Max[i]/ scale_factor
             end
-            inputs["fuel_max"] = fuel_max
-            =# 
+            
 
     end
 
     inputs["fuels"] = fuels
     inputs["fuel_costs"] = fuel_costs
     inputs["fuel_CO2"] = fuel_CO2
+
+    # fuel constraint
+    if setup["FuelMax"] == 1
+        inputs["fuel_max"] = fuel_max
+    end
 
     println(filename * " Successfully Read!")
 
