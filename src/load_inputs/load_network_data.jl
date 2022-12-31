@@ -97,11 +97,9 @@ function load_network_data!(setup::Dict, path::AbstractString, inputs_nw::Dict)
     end
 
     # put hurdle rate
-    #=
     if setup["HurdleRate"] == 1
         inputs_nw["HURDLE_RATE"]  = to_floats(:HurdleRate) / scale_factor
     end
-    =#
 
     println(filename * " Successfully Read!")
 

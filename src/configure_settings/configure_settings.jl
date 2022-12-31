@@ -70,7 +70,7 @@ function configure_settings(settings_path::String)
     # Fuel max; 0 = not active; 1 = active
     set_default_if_absent!(settings, "FuelMax", 0)
     # Hurdle Rate; 0 = not active; 1 = active
-    #set_default_if_absent!(settings, "HurdleRate", 0)
+    set_default_if_absent!(settings, "HurdleRate", 0)
 
 return settings
 end
