@@ -35,12 +35,11 @@ function write_power(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 
 	auxNew_Names=[Symbol("Resource");Symbol("Zone");Symbol("AnnualSum");[Symbol("t$t") for t in 1:T]]
 	rename!(dfPower,auxNew_Names)
-
 	total = DataFrame(["Total" 0 sum(dfPower[!,:AnnualSum]) fill(0.0, (1,T))], :auto)
 	total[:, 4:T+3] .= sum(power, dims = 1)
 
 	rename!(total,auxNew_Names)
 	dfPower = vcat(dfPower, total)
-	CSV.write(string(path,sep,"power.csv"), dftranspose(dfPower, false), writeheader=false)
+	CSV.write(joinpath(path, "power.csv"), dftranspose(dfPower, false), writeheader=false)
 	return dfPower
 end

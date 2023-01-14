@@ -47,6 +47,40 @@ function configure_ddp_dicts(setup::Dict, inputs::Dict)
         start_cap_d[Symbol("eAvail_Trans_Cap")] = Symbol("cExistingTransCap")
     end
 
+    if !isempty(inputs["VRE_STOR"])
+        if !isempty(inputs["VS_DC"])
+            start_cap_d[Symbol("eTotalCap_DC")] = Symbol("cExistingCapDC")
+        end
+
+        if !isempty(inputs["VS_SOLAR"])
+            start_cap_d[Symbol("eTotalCap_SOLAR")] = Symbol("cExistingCapSolar")
+        end
+
+        if !isempty(inputs["VS_WIND"])
+            start_cap_d[Symbol("eTotalCap_WIND")] = Symbol("cExistingCapWind")
+        end
+
+        if !isempty(inputs["VS_STOR"])
+            start_cap_d[Symbol("eTotalCap_STOR")] = Symbol("cExistingCapEnergy_VS")
+        end
+
+        if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+            start_cap_d[Symbol("eTotalCapDischarge_DC")] = Symbol("cExistingCapDischargeDC")
+        end
+
+        if !isempty(inputs["VS_ASYM_DC_CHARGE"])
+            start_cap_d[Symbol("eTotalCapCharge_DC")] = Symbol("cExistingCapChargeDC")
+        end
+
+        if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+            start_cap_d[Symbol("eTotalCapDischarge_AC")] = Symbol("cExistingCapDischargeAC")
+        end
+
+        if !isempty(inputs["VS_ASYM_AC_CHARGE"])
+            start_cap_d[Symbol("eTotalCapCharge_AC")] = Symbol("cExistingCapChargeAC")
+        end
+    end
+
     # This dictionary contains the endogenous retirement constraint name as a key,
     # and a tuple consisting of the associated tracking array constraint and variable as the value
     cap_track_d = Dict([(Symbol("vCAPTRACK"), Symbol("cCapTrack"))])
@@ -59,13 +93,47 @@ function configure_ddp_dicts(setup::Dict, inputs::Dict)
         cap_track_d[Symbol("vCAPTRACKCHARGE")] = Symbol("cCapTrackCharge")
     end
 
+    if !isempty(inputs["VRE_STOR"])
+        if !isempty(inputs["VS_DC"])
+            cap_track_d[Symbol("vCAPTRACKDC")] = Symbol("cCapTrackDC")
+        end
+
+        if !isempty(inputs["VS_SOLAR"])
+            cap_track_d[Symbol("vCAPTRACKSOLAR")] = Symbol("cCapTrackSolar")
+        end
+
+        if !isempty(inputs["VS_WIND"])
+            cap_track_d[Symbol("vCAPTRACKWIND")] = Symbol("cCapTrackWind")
+        end
+
+        if !isempty(inputs["VS_STOR"])
+            cap_track_d[Symbol("vCAPTRACKENERGY_VS")] = Symbol("cCapTrackEnergy_VS")
+        end
+
+        if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+            cap_track_d[Symbol("vCAPTRACKDISCHARGEDC")] = Symbol("cCapTrackDischargeDC")
+        end
+
+        if !isempty(inputs["VS_ASYM_DC_CHARGE"])
+            cap_track_d[Symbol("vCAPTRACKCHARGEDC")] = Symbol("cCapTrackChargeDC")
+        end
+
+        if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+            cap_track_d[Symbol("vCAPTRACKDISCHARGEAC")] = Symbol("cCapTrackDischargeAC")
+        end
+
+        if !isempty(inputs["VS_ASYM_AC_CHARGE"])
+            cap_track_d[Symbol("vCAPTRACKCHARGEAC")] = Symbol("cCapTrackChargeAC")
+        end
+    end
+
     return start_cap_d, cap_track_d
 end
 
 @doc raw"""
 	function run_ddp(models_d::Dict, setup::Dict, inputs_d::Dict)
 
-This function run the dual dynamic programming (DDP) algorithm, as described in [Pereira and Pinto (1991)](https://doi.org/10.1007/BF01582895), and more recently, [Lara et al. (2018)](https://doi.org/10.1016/j.ejor.2018.05.039). Note that if the algorithm does not converge within 10,000 (currently hardcoded) iterations, this function will return models with sub-optimal solutions. However, results will still be printed as if the model is finished solving.
+This function run the dual dynamic programming (DDP) algorithm, as described in [Pereira and Pinto (1991)](https://doi.org/10.1007/BF01582895), and more recently, [Lara et al. (2018)](https://doi.org/10.1016/j.ejor.2018.05.039). Note that if the algorithm does not converge within 10,000 (currently hardcoded) iterations, this function will return models with sub-optimal solutions. However, results will still be printed as if the model is finished solving. This sub-optimal termination is noted in the output with the 'Exiting Without Covergence!' message.
 
 inputs:
 
@@ -160,7 +228,7 @@ function run_ddp(models_d::Dict, setup::Dict, inputs_d::Dict)
             println("***********")
 
             # Step d.i) Fix initial investments for model at time t given optimal solution for time t-1
-            models_d[t] = fix_initial_investments(models_d[t-1], models_d[t], start_cap_d)
+            models_d[t] = fix_initial_investments(models_d[t-1], models_d[t], start_cap_d, inputs_d[t])
 
             # Step d.ii) Fix capacity tracking variables for endogenous retirements
             models_d[t] = fix_capacity_tracking(models_d[t-1], models_d[t], cap_track_d, t)
@@ -243,7 +311,7 @@ function run_ddp(models_d::Dict, setup::Dict, inputs_d::Dict)
         println("***********")
 
         # Step d.i) Fix initial investments for model at time t given optimal solution for time t-1
-        models_d[t] = fix_initial_investments(models_d[t-1], models_d[t], start_cap_d)
+        models_d[t] = fix_initial_investments(models_d[t-1], models_d[t], start_cap_d, inputs_d[t])
 
         # Step d.ii) Fix capacity tracking variables for endogenous retirements
         models_d[t] = fix_capacity_tracking(models_d[t-1], models_d[t], cap_track_d, t)
@@ -274,154 +342,17 @@ inputs:
 """
 function write_multi_stage_outputs(stats_d::Dict, outpath::String, settings_d::Dict, inputs_dict::Dict)
 
-    if Sys.isunix()
-        sep = "/"
-    elseif Sys.iswindows()
-        sep = "\U005c"
-    else
-        sep = "/"
-    end
-
     multi_stage_settings_d = settings_d["MultiStageSettingsDict"]
 
-    write_capacities_discharge(outpath, sep, multi_stage_settings_d)
-    #write_capacities_charge(outpath, sep, multi_stage_settings_d)
-    #write_capacities_energy(outpath, sep, multi_stage_settings_d)
-    #write_network_expansion(outpath, sep, multi_stage_settings_d)
-    write_costs(outpath, sep, multi_stage_settings_d, inputs_dict)
-    write_stats(outpath, sep, stats_d)
-    write_settings(outpath, sep, settings_d)
-
-end
-
-@doc raw"""
-	function write_capacities_discharge(outpath::String, sep::String, settings_d::Dict)
-
-This function writes the file capacities\_multi\_stage.csv to the Results directory. This file contains starting resource capcities from the first model stage and end resource capacities for the first and all subsequent model stages.
-
-inputs:
-
-  * outpath – String which represents the path to the Results directory.
-  * sep – String which represents the file directory separator character.
-  * settings\_d - Dictionary containing settings dictionary configured in the multi-stage settings file multi\_stage\_settings.yml.
-"""
-function write_capacities_discharge(outpath::String, sep::String, settings_d::Dict)
-    # TO DO - DO THIS FOR ENERGY CAPACITY AS WELL
-
-    num_stages = settings_d["NumStages"] # Total number of investment planning stages
-    capacities_d = Dict()
-
-    for p in 1:num_stages
-        inpath = string(outpath, sep, "Results_p$p")
-        capacities_d[p] = DataFrame(CSV.File(string(inpath, sep, "capacity.csv"), header=true), copycols=true)
+    write_multi_stage_capacities_discharge(outpath, multi_stage_settings_d)
+    write_multi_stage_capacities_charge(outpath, multi_stage_settings_d)
+    write_multi_stage_capacities_energy(outpath, multi_stage_settings_d)
+    if settings_d["NetworkExpansion"] == 1
+    	write_multi_stage_network_expansion(outpath, multi_stage_settings_d)
     end
-
-    # Set first column of DataFrame as resource names from the first stage
-    df_cap = DataFrame(Resource=capacities_d[1][!, :Resource], Zone=capacities_d[1][!, :Zone])
-
-    # Store starting capacities from the first stage
-    df_cap[!, Symbol("StartCap_p1")] = capacities_d[1][!, :StartCap]
-
-    # Store end capacities for all stages
-    for p in 1:num_stages
-        df_cap[!, Symbol("EndCap_p$p")] = capacities_d[p][!, :EndCap]
-    end
-
-    CSV.write(string(outpath, sep, "capacities_multi_stage.csv"), df_cap)
-
-end
-
-function write_capacities_charge(outpath::String, sep::String, settings_d::Dict) end
-
-function write_capacities_energy(outpath::String, sep::String, settings_d::Dict) end
-
-function write_network_expansion(outpath::String, sep::String, settings_d::Dict)
-    # Include discounted NE costs and capacities for each model period
-end
-
-@doc raw"""
-	function write_costs(outpath::String, sep::String, settings_d::Dict)
-
-This function writes the file costs\_multi\_stage.csv to the Results directory. This file contains variable, fixed, startup, network expansion, unmet reserve, and non-served energy costs discounted to year zero.
-
-inputs:
-
-  * outpath – String which represents the path to the Results directory.
-  * sep – String which represents the file directory separator character.
-  * settings\_d - Dictionary containing settings dictionary configured in the multi-stage settings file multi\_stage\_settings.yml.
-"""
-function write_costs(outpath::String, sep::String, settings_d::Dict, inputs_dict::Dict)
-
-    num_stages = settings_d["NumStages"] # Total number of DDP stages
-    wacc = settings_d["WACC"] # Interest Rate and also the discount rate unless specified other wise
-    stage_lens = settings_d["StageLengths"]
-    myopic = settings_d["Myopic"] == 1 # 1 if myopic (only one forward pass), 0 if full DDP
-
-    costs_d = Dict()
-    for p in 1:num_stages
-        cur_path = string(outpath, sep, "Results_p$p")
-        costs_d[p] = DataFrame(CSV.File(string(cur_path, sep, "costs.csv"), header=true), copycols=true)
-    end
-
-    OPEXMULTS = [inputs_dict[j]["OPEXMULT"] for j in 1:num_stages] # Stage-wise OPEX multipliers to count multiple years between two model stages
-
-    # Set first column of DataFrame as resource names from the first stage
-    df_costs = DataFrame(Costs=costs_d[1][!, :Costs])
-
-    # Store discounted total costs for each stage in a data frame
-    for p in 1:num_stages
-        if myopic
-            DF = 1 # DF=1 because we do not apply discount factor in myopic case
-        else
-            DF = 1 / (1 + wacc)^(stage_lens[p] * (p - 1))  # Discount factor applied to ALL costs in each stage
-        end
-        df_costs[!, Symbol("TotalCosts_p$p")] = DF .* costs_d[p][!, Symbol("Total")]
-    end
-
-    # For OPEX costs, apply additional discounting
-    for cost in ["cVar", "cNSE", "cStart", "cUnmetRsv"]
-        if cost in df_costs[!, :Costs]
-            df_costs[df_costs[!, :Costs].==cost, 2:end] = transpose(OPEXMULTS) .* df_costs[df_costs[!, :Costs].==cost, 2:end]
-        end
-    end
-
-    # Remove "cTotal" from results (as this includes Cost-to-Go)
-    df_costs = df_costs[df_costs[!, :Costs].!="cTotal", :]
-
-    CSV.write(string(outpath, sep, "costs_multi_stage.csv"), df_costs)
-
-end
-
-@doc raw"""
-	function write_stats(outpath::String, sep::String, stats_d::Dict)
-
-This function writes the file stats\_multi\_stage.csv. to the Results directory. This file contains the runtime, upper bound, lower bound, and relative optimality gap for each iteration of the DDP algorithm.
-
-inputs:
-
-  * outpath – String which represents the path to the Results directory.
-  * sep – String which represents the file directory separator character.
-  * stats\_d – Dictionary which contains the run time, upper bound, and lower bound of each DDP iteration.
-"""
-function write_stats(outpath::String, sep::String, stats_d::Dict)
-
-    times_a = stats_d["TIMES"] # Time (seconds) of each iteration
-    upper_bounds_a = stats_d["UPPER_BOUNDS"] # Upper bound of each iteration
-    lower_bounds_a = stats_d["LOWER_BOUNDS"] # Lower bound of each iteration
-
-    # Create an array of numbers 1 through total number of iterations
-    iteration_count_a = collect(1:length(times_a))
-
-    realtive_gap_a = (upper_bounds_a .- lower_bounds_a) ./ lower_bounds_a
-
-    # Construct dataframe where first column is iteration number, second is iteration time
-    df_stats = DataFrame(Iteration_Number=iteration_count_a,
-        Seconds=times_a,
-        Upper_Bound=upper_bounds_a,
-        Lower_Bound=lower_bounds_a,
-        Relative_Gap=realtive_gap_a)
-
-    CSV.write(string(outpath, sep, "stats_multi_stage.csv"), df_stats)
+    write_multi_stage_costs(outpath, multi_stage_settings_d, inputs_dict)
+    write_multi_stage_stats(outpath, stats_d)
+    write_multi_stage_settings(outpath, settings_d)
 
 end
 
@@ -438,16 +369,19 @@ inputs:
 
 returns: JuMP model with updated linking constraints.
 """
-function fix_initial_investments(EP_prev::Model, EP_cur::Model, start_cap_d::Dict)
+function fix_initial_investments(EP_prev::Model, EP_cur::Model, start_cap_d::Dict, inputs_d::Dict)
+	
+    RET_CAP = inputs_d["RET_CAP"] # Set of all resources subject to inter-stage capacity tracking
 
     # start_cap_d dictionary contains the starting capacity expression name (e) as a key,
     # and the associated linking constraint name (c) as a value
     for (e, c) in start_cap_d
         for y in keys(EP_cur[c])
-
-            # Set the right hand side value of the linking initial capacity constraint in the current
-            # stage to the value of the available capacity variable solved for in the previous stages
-            set_normalized_rhs(EP_cur[c][y], value(EP_prev[e][y]))
+            if y in RET_CAP
+                # Set the right hand side value of the linking initial capacity constraint in the current
+                # stage to the value of the available capacity variable solved for in the previous stages
+                set_normalized_rhs(EP_cur[c][y], value(EP_prev[e][y]))
+            end
         end
     end
     return EP_cur
@@ -593,8 +527,8 @@ function generate_cut_component_track(EP_cur::Model, EP_next::Model, var_name::S
         y = k[1] # Index representing resource
         p = k[2] # Index representing stage
 
-        push!(next_dual_value, getdual(EP_next[constr_name][y, p]))
-        push!(cur_inv_value, getvalue(EP_cur[var_name][y, p]))
+        push!(next_dual_value, dual(EP_next[constr_name][y, p]))
+        push!(cur_inv_value, value(EP_cur[var_name][y, p]))
         push!(cur_inv_var, EP_cur[var_name][y, p])
     end
 

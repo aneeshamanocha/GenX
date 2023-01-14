@@ -20,6 +20,7 @@ module GenX
 export configure_settings
 export configure_solver
 export load_inputs
+export load_dataframe
 export generate_model
 export solve_model
 export write_outputs
@@ -34,10 +35,10 @@ export run_ddp
 export configure_multi_stage_inputs
 export load_inputs_multi_stage
 export write_multi_stage_outputs
+export run_genx_case!
 
 using JuMP # used for mathematical programming
 using DataFrames #This package allows put together data into a matrix
-using MathProgBase #for fix_integers
 using CSV
 using StatsBase
 using LinearAlgebra
@@ -46,11 +47,7 @@ using Dates
 using Clustering
 using Distances
 using Combinatorics
-using Documenter
 
-using DiffEqSensitivity
-using OrdinaryDiffEq
-using QuasiMonteCarlo
 using Random
 using RecursiveArrayTools
 using Statistics
@@ -62,6 +59,7 @@ using Statistics
 #using MOI
 #using SCIP
 using BenchmarkTools
+using HiGHS
 using Clp
 using Cbc
 
@@ -72,10 +70,14 @@ using Cbc
 # To translate $/MWh to $M/GWh, multiply by ModelScalingFactor
 ModelScalingFactor = 1e+3
 
+# Case runner
+include("case_runners/case_runner.jl")
+
 # Configure settings
 include("configure_settings/configure_settings.jl")
 
 # Configure optimizer instance
+include("configure_solver/configure_highs.jl")
 include("configure_solver/configure_gurobi.jl")
 include("configure_solver/configure_scip.jl")
 include("configure_solver/configure_cplex.jl")
@@ -84,6 +86,7 @@ include("configure_solver/configure_cbc.jl")
 include("configure_solver/configure_solver.jl")
 
 # Load input data
+include("load_inputs/load_dataframe.jl")
 include("load_inputs/load_generators_data.jl")
 include("load_inputs/load_generators_variability.jl")
 include("load_inputs/load_network_data.jl")
@@ -95,12 +98,14 @@ include("load_inputs/load_period_map.jl")
 include("load_inputs/load_minimum_capacity_requirement.jl")
 include("load_inputs/load_load_data.jl")
 include("load_inputs/load_fuels_data.jl")
+include("load_inputs/load_vre_stor_variability.jl")
 
 include("load_inputs/load_inputs.jl")
 
 include("time_domain_reduction/time_domain_reduction.jl")
 
 #Core GenX Features
+include("model/utility.jl")
 include("model/core/discharge/discharge.jl")
 include("model/core/discharge/investment_discharge.jl")
 
@@ -129,9 +134,13 @@ include("model/resources/storage/investment_charge.jl")
 include("model/resources/storage/storage_asymmetric.jl")
 include("model/resources/storage/storage_symmetric.jl")
 
+include("model/resources/vre_stor/vre_stor.jl")
+
 include("model/resources/thermal/thermal.jl")
 include("model/resources/thermal/thermal_commit.jl")
 include("model/resources/thermal/thermal_no_commit.jl")
+
+include("model/resources/retrofits/retrofits.jl")
 
 include("model/policies/co2_cap.jl")
 include("model/policies/energy_share_requirement.jl")
@@ -143,6 +152,7 @@ include("model/solve_model.jl")
 
 include("write_outputs/dftranspose.jl")
 include("write_outputs/write_capacity.jl")
+include("write_outputs/write_capacityfactor.jl")
 include("write_outputs/write_charge.jl")
 include("write_outputs/write_charging_cost.jl")
 include("write_outputs/write_costs.jl")
@@ -161,14 +171,21 @@ include("write_outputs/write_storagedual.jl")
 include("write_outputs/write_subsidy_revenue.jl")
 include("write_outputs/write_time_weights.jl")
 include("write_outputs/choose_output_dir.jl")
+include("write_outputs/write_vre_stor.jl")
+include("write_outputs/write_virtual_discharge.jl")
 
 include("write_outputs/capacity_reserve_margin/write_capacity_value.jl")
 include("write_outputs/capacity_reserve_margin/write_reserve_margin_revenue.jl")
 include("write_outputs/capacity_reserve_margin/write_reserve_margin_w.jl")
 include("write_outputs/capacity_reserve_margin/write_reserve_margin.jl")
+include("write_outputs/capacity_reserve_margin/write_reserve_margin_slack.jl")
 
 include("write_outputs/energy_share_requirement/write_esr_prices.jl")
 include("write_outputs/energy_share_requirement/write_esr_revenue.jl")
+
+include("write_outputs/co2_cap/write_co2_cap.jl")
+
+include("write_outputs/minimum_capacity_requirement/write_minimum_capacity_requirement.jl")
 
 include("write_outputs/long_duration_storage/write_opwrap_lds_dstor.jl")
 include("write_outputs/long_duration_storage/write_opwrap_lds_stor_init.jl")
@@ -190,12 +207,17 @@ include("write_outputs/write_outputs.jl")
 include("simple_operation.jl")
 
 # Multi Stage files
+include("multi_stage/write_multi_stage_settings.jl")
+include("multi_stage/write_multi_stage_capacities_discharge.jl")
+include("multi_stage/write_multi_stage_capacities_charge.jl")
+include("multi_stage/write_multi_stage_capacities_energy.jl")
+include("multi_stage/write_multi_stage_network_expansion.jl")
+include("multi_stage/write_multi_stage_costs.jl")
+include("multi_stage/write_multi_stage_stats.jl")
 include("multi_stage/dual_dynamic_programming.jl")
 include("multi_stage/configure_multi_stage_inputs.jl")
 include("multi_stage/endogenous_retirement.jl")
-include("multi_stage//write_settings.jl")
 
 include("additional_tools/modeling_to_generate_alternatives.jl")
-include("additional_tools/method_of_morris_v2.jl")
 include("additional_tools/method_of_morris.jl")
 end

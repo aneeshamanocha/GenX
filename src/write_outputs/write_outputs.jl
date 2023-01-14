@@ -64,6 +64,7 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 	dfCap = write_capacity(path, inputs, setup, EP)
 	dfPower = write_power(path, inputs, setup, EP)
 	dfCharge = write_charge(path, inputs, setup, EP)
+	dfCapacityfactor = write_capacityfactor(path, inputs, setup, EP)
 	elapsed_time_storage = @elapsed write_storage(path, inputs, setup, EP)
 	println("Time elapsed for writing storage is")
 	println(elapsed_time_storage)
@@ -94,9 +95,11 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		elapsed_time_reliability = @elapsed write_reliability(path, inputs, setup, EP)
 		println("Time elapsed for writing reliability is")
 		println(elapsed_time_reliability)
-		elapsed_time_stordual = @elapsed write_storagedual(path, inputs, setup, EP)
-		println("Time elapsed for writing storage duals is")
-		println(elapsed_time_stordual)
+		if !isempty(inputs["STOR_ALL"])
+			elapsed_time_stordual = @elapsed write_storagedual(path, inputs, setup, EP)
+			println("Time elapsed for writing storage duals is")
+			println(elapsed_time_stordual)
+		end
 	end
 
 	if setup["UCommit"] >= 1
@@ -121,7 +124,7 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 
 
 	# Output additional variables related inter-period energy transfer via storage
-	if setup["OperationWrapping"] == 1 && !isempty(inputs["STOR_LONG_DURATION"])
+	if setup["OperationWrapping"] == 1 && (!isempty(inputs["STOR_LONG_DURATION"]) || !isempty(inputs["VS_LDS"]))
 		elapsed_time_lds_init = @elapsed write_opwrap_lds_stor_init(path, inputs, setup, EP)
 		println("Time elapsed for writing lds init is")
 		println(elapsed_time_lds_init)
@@ -139,8 +142,8 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		dfRegSubRevenue = DataFrame()
 		if has_duals(EP) == 1
 			dfPrice = write_price(path, inputs, setup, EP)
-			dfEnergyRevenue = write_energy_revenue(path, sep, inputs, setup, EP)
-			dfChargingcost = write_charging_cost(path, sep, inputs, setup, EP)
+			dfEnergyRevenue = write_energy_revenue(path, inputs, setup, EP)
+			dfChargingcost = write_charging_cost(path, inputs, setup, EP)
 			dfSubRevenue, dfRegSubRevenue = write_subsidy_revenue(path, inputs, setup, EP)
 		end
 
@@ -151,25 +154,40 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		dfESRRev = DataFrame()
 		if setup["EnergyShareRequirement"]==1 && has_duals(EP) == 1
 			dfESR = write_esr_prices(path, inputs, setup, EP)
-			dfESRRev = write_esr_revenue(path, inputs, setup, dfPower, dfESR)
+			dfESRRev = write_esr_revenue(path, inputs, setup, dfPower, dfESR, EP)
 		end
 		dfResMar = DataFrame()
 		dfResRevenue = DataFrame()
 		if setup["CapacityReserveMargin"]==1 && has_duals(EP) == 1
 			dfResMar = write_reserve_margin(path, setup, EP)
 			elapsed_time_rsv_margin = @elapsed write_reserve_margin_w(path, inputs, setup, EP)
+			dfVirtualDischarge = write_virtual_discharge(path, inputs, setup, EP)
 		  println("Time elapsed for writing reserve margin is")
 		  println(elapsed_time_rsv_margin)
-			dfResRevenue = write_reserve_margin_revenue(path, sep, inputs, setup, EP)
-			elapsed_time_cap_value = @elapsed write_capacity_value(path, sep, inputs, setup, EP)
+			dfResRevenue = write_reserve_margin_revenue(path, inputs, setup, EP)
+			elapsed_time_cap_value = @elapsed write_capacity_value(path, inputs, setup, EP)
 		  println("Time elapsed for writing capacity value is")
 		  println(elapsed_time_cap_value)
+			if haskey(inputs, "dfCapRes_slack")
+				dfResMar_slack = write_reserve_margin_slack(path, inputs, setup, EP)
+			end		  
+		end
+		if setup["CO2Cap"]>0 && has_duals(EP) == 1
+			dfCO2Cap = write_co2_cap(path, inputs, setup, EP)
+		end
+		if setup["MinCapReq"] == 1 && has_duals(EP) == 1
+			dfMinCapReq = write_minimum_capacity_requirement(path, inputs, setup, EP)
 		end
 
+
 		elapsed_time_net_rev = @elapsed write_net_revenue(path, inputs, setup, EP, dfCap, dfESRRev, dfResRevenue, dfChargingcost, dfPower, dfEnergyRevenue, dfSubRevenue, dfRegSubRevenue)
-	  println("Time elapsed for writing net revenue is")
-	  println(elapsed_time_net_rev)
+	  	println("Time elapsed for writing net revenue is")
+	  	println(elapsed_time_net_rev)
+	  	if !isempty(inputs["VRE_STOR"])
+			write_vre_stor(path, inputs, setup, EP)
+		end
 	end
+	
 	## Print confirmation
 	println("Wrote outputs to $path")
 

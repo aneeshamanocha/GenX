@@ -20,24 +20,24 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 ##########################################################################################################################################
 
 @doc raw"""
-	reserves(EP::Model, inputs::Dict, UCommit::Int)
+	reserves!(EP::Model, inputs::Dict, setup::Dict)
 
 This function sets up reserve decisions and constraints, using the reserves_core()` and reserves_contingency()` functions.
 """
-function reserves(EP::Model, inputs::Dict, UCommit::Int)
+function reserves!(EP::Model, inputs::Dict, setup::Dict)
+
+	UCommit = setup["UCommit"]
 
 	if inputs["pStatic_Contingency"] > 0 || (UCommit >= 1 && inputs["pDynamic_Contingency"] >= 1)
-		EP = reserves_contingency(EP, inputs, UCommit)
+		reserves_contingency!(EP, inputs, setup)
 	end
 
-	EP = reserves_core(EP, inputs, UCommit)
-
-	return EP
+	reserves_core!(EP, inputs, setup)
 end
 
 
 @doc raw"""
-	reserves_contingency(EP::Model, inputs::Dict, UCommit::Int)
+	reserves_contingency!(EP::Model, inputs::Dict, setup::Dict)
 
 This function establishes several different versions of contingency reserve requirement expression, $CONTINGENCY$ used in the reserves_core() function below.
 
@@ -83,13 +83,14 @@ Option 3 (dynamic commitment-based contingency) is expressed by the following se
 
 where $M_y$ is a `big M' constant equal to the largest possible capacity that can be installed for generation cluster $y$, and $Contingency\_Aux_{y,z,t} \in [0,1]$ is a binary auxiliary variable that is forced by the second and third equations above to be 1 if the commitment state for that generation cluster $\nu_{y,z,t} > 0$ for any generator $y \in \mathcal{UC}$ and zone $z$ and time period $t$, and can be 0 otherwise. Note that this dynamic commitment-based contingency can only be specified if discrete unit commitment decisions are used (e.g. it will not work if relaxed unit commitment is used).
 """
-function reserves_contingency(EP::Model, inputs::Dict, UCommit::Int)
+function reserves_contingency!(EP::Model, inputs::Dict, setup::Dict)
 
 	println("Reserves Contingency Module")
 
 	dfGen = inputs["dfGen"]
 
 	T = inputs["T"]     # Number of time steps (hours)
+	UCommit = setup["UCommit"]
 	COMMIT = inputs["COMMIT"]
 
 	if UCommit >= 1
@@ -132,7 +133,7 @@ function reserves_contingency(EP::Model, inputs::Dict, UCommit::Int)
 		# option 1: ensures vLARGEST_CONTINGENCY is greater than the capacity of the largest installed generator
 	if UCommit == 1 && pDynamic_Contingency == 1
 		@constraint(EP, cContingency[y in COMMIT], vLARGEST_CONTINGENCY >=
-			inputs["dfGen"][!,:Cap_Size][y]*vCONTINGENCY_AUX[y] )
+			inputs["dfGen"][y,:Cap_Size]*vCONTINGENCY_AUX[y] )
 		# Ensure vCONTINGENCY_AUX = 0 if total capacity = 0
 		@constraint(EP, cContAux1[y in COMMIT], vCONTINGENCY_AUX[y] <= EP[:eTotalCap][y])
 		# Ensure vCONTINGENCY_AUX = 1 if total capacity > 0
@@ -141,19 +142,18 @@ function reserves_contingency(EP::Model, inputs::Dict, UCommit::Int)
 		# option 2: ensures vLARGEST_CONTINGENCY is greater than the capacity of the largest commited generator in each hour
 	elseif UCommit == 1 && pDynamic_Contingency == 2
 		@constraint(EP, cContingency[y in COMMIT, t=1:T], vLARGEST_CONTINGENCY[t] >=
-			inputs["dfGen"][!,:Cap_Size][y]*vCONTINGENCY_AUX[y,t] )
+			inputs["dfGen"][y,:Cap_Size]*vCONTINGENCY_AUX[y,t] )
 		# Ensure vCONTINGENCY_AUX = 0 if vCOMMIT = 0
 		@constraint(EP, cContAux[y in COMMIT, t=1:T], vCONTINGENCY_AUX[y,t] <= EP[:vCOMMIT][y,t])
 		# Ensure vCONTINGENCY_AUX = 1 if vCOMMIT > 0
 		@constraint(EP, cContAux2[y in COMMIT, t=1:T], EP[:vCOMMIT][y, t] <= inputs["pContingency_BigM"][y]*vCONTINGENCY_AUX[y,t])
 	end
 
-	return EP
 end
 
 
 @doc raw"""
-	reserves_core(EP::Model, inputs::Dict, UCommit::Int)
+	reserves_core!(EP::Model, inputs::Dict, setup::Dict)
 
 This function creates decision variables related to frequency regulation and reserves provision and constraints setting overall system requirements for regulation and operating reserves.
 
@@ -165,6 +165,8 @@ $r_{y,t,z} \geq 0$ is the contribution of generation or storage resource $y \in 
 We assume frequency regulation is symmetric (provided in equal quantity towards both upwards and downwards regulation). To reduce computational complexity, operating reserves are only modeled in the upwards direction, as downwards reserves requirements are rarely binding in practice.
 
 Storage resources ($y \in \mathcal{O}$) have two pairs of auxilary variables to reflect contributions to regulation and reserves when charging and discharging, where the primary variables ($f_{y,z,t}$ \& $r_{y,z,t}$) becomes equal to sum of these auxilary variables.
+
+Co-located VRE-STOR resources are described further in the reserves function for colocated VRE and storage resources (```vre_stor_reserves!()```).
 
 **Unmet operating reserves**
 
@@ -184,10 +186,18 @@ Total requirements for frequency regulation (aka primary reserves) in each time 
 
 ```math
 \begin{aligned}
-	\sum_{y \in Y, z \in Z} f_{y,t,z} \geq \epsilon^{load}_{reg} \times \sum_{z \in Z} \mathcal{D}_{z,t} + \epsilon^{vre}_{reg} \times \sum_{z \in Z} \rho^{max}_{y,z,t} \times \Delta^{\text{total}}_{y,z} \quad \forall t \in T
+	& \sum_{y \in Y, z \in Z} f_{y,t,z} \geq \epsilon^{load}_{reg} \times \sum_{z \in Z} \mathcal{D}_{z,t} + \epsilon^{vre}_{reg} \times (\sum_{z \in Z} \rho^{max}_{y,z,t} \times \Delta^{\text{total}}_{y,z} \\
+	& + \sum_{z \in Z} \rho^{max,pv}_{y,z,t} \times \Delta^{\text{total,pv}}_{y,z} + \sum_{z \in Z} \rho^{max,wind}_{y,z,t} \times \Delta^{\text{total,wind}}_{y,z}) \quad \forall t \in T
 \end{aligned}
 ```
-where $\mathcal{D}_{z,t}$ is the forecasted electricity demand in zone $z$ at time $t$ (before any demand flexibility); $\rho^{max}_{y,z,t}$ is the forecasted capacity factor for variable renewable resource $y \in VRE$ and zone $z$ in time step $t$; $\Delta^{\text{total}}_{y,z}$ is the total installed capacity of variable renewable resources $y \in VRE$ and zone $z$; and $\epsilon^{load}_{reg}$ and $\epsilon^{vre}_{reg}$ are parameters specifying the required frequency regulation as a fraction of forecasted demand and variable renewable generation.
+where $\mathcal{D}_{z,t}$ is the forecasted electricity demand in zone $z$ at time $t$ (before any demand flexibility); 
+$\rho^{max}_{y,z,t}$ is the forecasted capacity factor for standalone variable renewable resources $y \in VRE$ and zone $z$ in time step $t$;
+$\rho^{max,pv}_{y,z,t}$ is the forecasted capacity factor for co-located solar PV resources $y \in \mathcal{VS}^{pv}$ and zone $z$ in time step $t$;
+$\rho^{max,wind}_{y,z,t}$ is the forecasted capacity factor for co-located wind resources $y \in \mathcal{VS}^{pv}$ and zone $z$ in time step $t$;
+$\Delta^{\text{total}}_{y,z}$ is the total installed capacity of standalone variable renewable resources $y \in VRE$ and zone $z$; 
+$\Delta^{\text{total,pv}}_{y,z}$ is the total installed capacity of co-located solar PV resources $y \in \mathcal{VS}^{pv}$ and zone $z$; 
+$\Delta^{\text{total,wind}}_{y,z}$ is the total installed capacity of co-located wind resources $y \in \mathcal{VS}^{wind}$ and zone $z$; 
+and $\epsilon^{load}_{reg}$ and $\epsilon^{vre}_{reg}$ are parameters specifying the required frequency regulation as a fraction of forecasted demand and variable renewable generation.
 
 **Operating reserve requirements**
 
@@ -195,13 +205,20 @@ Total requirements for operating reserves in the upward direction (aka spinning 
 
 ```math
 \begin{aligned}
-	\sum_{y \in Y, z \in Z} r_{y,z,t} + r^{unmet}_{t} \geq \epsilon^{load}_{rsv} \times \sum_{z \in Z} \mathcal{D}_{z,t} + \epsilon^{vre}_{rsv} \times \sum_{z \in Z} \rho^{max}_{y,z,t} \times \Delta^{\text{total}}_{y,z} + Contingency \quad \forall t \in T
+	& \sum_{y \in Y, z \in Z} r_{y,z,t} + r^{unmet}_{t} \geq \epsilon^{load}_{rsv} \times \sum_{z \in Z} \mathcal{D}_{z,t} + \epsilon^{vre}_{rsv} \times (\sum_{z \in Z} \rho^{max}_{y,z,t} \times \Delta^{\text{total}}_{y,z} \\
+	& + \sum_{z \in Z} \rho^{max,pv}_{y,z,t} \times \Delta^{\text{total,pv}}_{y,z} + \sum_{z \in Z} \rho^{max,wind}_{y,z,t} \times \Delta^{\text{total,wind}}_{y,z}) + Contingency \quad \forall t \in T
 \end{aligned}
 ```
 
-where $\mathcal{D}_{z,t}$ is the forecasted electricity demand in zone $z$ at time $t$ (before any demand flexibility); $\rho^{max}_{y,z,t}$ is the forecasted capacity factor for variable renewable resource $y \in VRE$ and zone $z$ in time step $t$; $\Delta^{\text{total}}_{y,z}$ is the total installed capacity of variable renewable resources $y \in VRE$ and zone $z$; and $\epsilon^{load}_{rsv}$ and $\epsilon^{vre}_{rsv}$ are parameters specifying the required contingency reserves as a fraction of forecasted demand and variable renewable generation. $Contingency$ is an expression defined in the reserves\_contingency() function meant to represent the largest `N-1` contingency (unplanned generator outage) that the system operator must carry operating reserves to cover and depends on how the user wishes to specify contingency requirements.
+where $\mathcal{D}_{z,t}$ is the forecasted electricity demand in zone $z$ at time $t$ (before any demand flexibility); $\rho^{max}_{y,z,t}$ is the forecasted capacity factor for standalone variable renewable resources $y \in VRE$ and zone $z$ in time step $t$; 
+$\rho^{max,pv}_{y,z,t}$ is the forecasted capacity factor for co-located solar PV resources $y \in \mathcal{VS}^{pv}$ and zone $z$ in time step $t$; 
+$\rho^{max,wind}_{y,z,t}$ is the forecasted capacity factor for co-located wind resources $y \in \mathcal{VS}^{wind}$ and zone $z$ in time step $t$;
+$\Delta^{\text{total}}_{y,z}$ is the total installed capacity of standalone variable renewable resources $y \in VRE$ and zone $z$; 
+$\Delta^{\text{total,pv}}_{y,z}$ is the total installed capacity of co-located solar PV resources $y \in \mathcal{VS}^{pv}$ and zone $z$; 
+$\Delta^{\text{total,wind}}_{y,z}$ is the total installed capacity of co-located wind resources $y \in \mathcal{VS}^{wind}$ and zone $z$; 
+and $\epsilon^{load}_{rsv}$ and $\epsilon^{vre}_{rsv}$ are parameters specifying the required contingency reserves as a fraction of forecasted demand and variable renewable generation. $Contingency$ is an expression defined in the reserves\_contingency() function meant to represent the largest `N-1` contingency (unplanned generator outage) that the system operator must carry operating reserves to cover and depends on how the user wishes to specify contingency requirements.
 """
-function reserves_core(EP::Model, inputs::Dict, UCommit::Int)
+function reserves_core!(EP::Model, inputs::Dict, setup::Dict)
 
 	# DEV NOTE: After simplifying reserve changes are integrated/confirmed, should we revise such that reserves can be modeled without UC constraints on?
 	# Is there a use case for economic dispatch constraints with reserves?
@@ -209,6 +226,7 @@ function reserves_core(EP::Model, inputs::Dict, UCommit::Int)
 	println("Reserves Core Module")
 
 	dfGen = inputs["dfGen"]
+	UCommit = setup["UCommit"]
 
 	T = inputs["T"]     # Number of time steps (hours)
 	Z = inputs["Z"]     # Number of zones
@@ -244,6 +262,22 @@ function reserves_core(EP::Model, inputs::Dict, UCommit::Int)
 	@expression(EP, eRsvReq[t=1:T], inputs["pRsv_Req_Load"]*sum(inputs["pD"][t,z] for z=1:Z) +
 				inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max"][y,t]*EP[:eTotalCap][y] for y in intersect(inputs["VRE"], inputs["MUST_RUN"])))
 
+	# Add VRE-storage resources
+	if !isempty(inputs["VRE_STOR"])
+		VS_SOLAR = inputs["VS_SOLAR"]
+		VS_WIND = inputs["VS_WIND"]
+		if !isempty((VS_SOLAR))
+			by_rid(rid, sym) = by_rid_df(rid, sym, inputs["dfVRE_STOR"])
+			eRegReq += inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in VS_SOLAR)
+			eRsvReq += inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in VS_SOLAR)
+		end
+
+		if !isempty((VS_WIND))
+			eRegReq += inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in VS_WIND)
+			eRsvReq += inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in VS_WIND)
+		end
+	end
+
 	# N-1 contingency requirement is considered only if Unit Commitment is being modeled
 	if UCommit >= 1 && (inputs["pDynamic_Contingency"] >= 1 || inputs["pStatic_Contingency"] > 0)
 		EP[:eRsvReq] = EP[:eRsvReq] + EP[:eContingencyReq]
@@ -254,8 +288,8 @@ function reserves_core(EP::Model, inputs::Dict, UCommit::Int)
 	# Penalty for unmet operating reserves
 	@expression(EP, eCRsvPen[t=1:T], inputs["omega"][t]*inputs["pC_Rsv_Penalty"]*vUNMET_RSV[t])
 	@expression(EP, eTotalCRsvPen, sum(eCRsvPen[t] for t=1:T) +
-		sum(dfGen[!,:Reg_Cost][y]*vRSV[y,t] for y in RSV, t=1:T) +
-		sum(dfGen[!,:Rsv_Cost][y]*vREG[y,t] for y in REG, t=1:T) )
+		sum(dfGen[y,:Reg_Cost]*vRSV[y,t] for y in RSV, t=1:T) +
+		sum(dfGen[y,:Rsv_Cost]*vREG[y,t] for y in REG, t=1:T) )
 	EP[:eObj] += eTotalCRsvPen
 
 	### Constraints ###
@@ -267,5 +301,4 @@ function reserves_core(EP::Model, inputs::Dict, UCommit::Int)
 
 	@constraint(EP, cRsvReq[t=1:T], sum(vRSV[y,t] for y in RSV) + vUNMET_RSV[t] >= EP[:eRsvReq][t])
 
-	return EP
 end
