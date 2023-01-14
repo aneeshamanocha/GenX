@@ -25,6 +25,10 @@ function write_charge(path::AbstractString, inputs::Dict, setup::Dict, EP::Model
 	T = inputs["T"]     # Number of time steps (hours)
 	STOR_ALL = inputs["STOR_ALL"]
 	FLEX = inputs["FLEX"]
+	VRE_STOR = inputs["VRE_STOR"]
+	if !isempty(VRE_STOR)
+		VS_STOR = inputs["VS_STOR"]
+	end
 	# Power withdrawn to charge each resource in each time step
 	dfCharge = DataFrame(Resource = inputs["RESOURCES"], Zone = dfGen[!,:Zone], AnnualSum = Array{Union{Missing,Float64}}(undef, G))
 	charge = zeros(G,T)
@@ -35,6 +39,9 @@ function write_charge(path::AbstractString, inputs::Dict, setup::Dict, EP::Model
 	    if !isempty(inputs["FLEX"])
 	        charge[FLEX, :] = value.(EP[:vCHARGE_FLEX][FLEX, :]) * ModelScalingFactor
 	    end
+		if !isempty(VRE_STOR)
+			charge[VS_STOR, :] = value.(EP[:vCHARGE_VRE_STOR][VS_STOR, :]) * ModelScalingFactor
+		end
 	    dfCharge.AnnualSum .= charge * inputs["omega"]
 	else
 	    if !isempty(inputs["STOR_ALL"])
@@ -43,6 +50,9 @@ function write_charge(path::AbstractString, inputs::Dict, setup::Dict, EP::Model
 	    if !isempty(inputs["FLEX"])
 	        charge[FLEX, :] = value.(EP[:vCHARGE_FLEX][FLEX, :])
 	    end
+		if !isempty(VRE_STOR)
+			charge[VS_STOR, :] = value.(EP[:vCHARGE_VRE_STOR][VS_STOR, :])
+		end
 	    dfCharge.AnnualSum .= charge * inputs["omega"]
 	end
 	dfCharge = hcat(dfCharge, DataFrame(charge, :auto))

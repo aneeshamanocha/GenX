@@ -123,7 +123,7 @@ function storage(EP::Model, inputs::Dict, Reserves::Int, OperationWrapping::Int,
 
 		# Include Long Duration Storage only when modeling representative periods and long-duration storage
 		if OperationWrapping == 1 && !isempty(inputs["STOR_LONG_DURATION"])
-			EP = long_duration_storage(EP, inputs)
+			long_duration_storage!(EP, inputs, setup)
 		end
 	end
 
@@ -144,7 +144,8 @@ function storage(EP::Model, inputs::Dict, Reserves::Int, OperationWrapping::Int,
 
 	# Capacity Reserves Margin policy
 	if CapacityReserveMargin > 0
-		@expression(EP, eCapResMarBalanceStor[res=1:inputs["NCapacityReserveMargin"], t=1:T], sum(dfGen[y,Symbol("CapRes_$res")] * (EP[:vP][y,t] - EP[:vCHARGE][y,t])  for y in STOR_ALL))
+		@expression(EP, eCapResMarBalanceStor[res=1:inputs["NCapacityReserveMargin"], t=1:T], 
+		sum(dfGen[y,Symbol("CapRes_$res")] * (EP[:vP][y,t] + EP[:vCAPCONTRSTOR_VP][y,t] - EP[:vCHARGE][y,t] - EP[:vCAPCONTRSTOR_VCHARGE][y,t])  for y in STOR_ALL))
 		EP[:eCapResMarBalance] += eCapResMarBalanceStor
 	end
 

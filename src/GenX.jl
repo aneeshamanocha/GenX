@@ -95,6 +95,7 @@ include("load_inputs/load_period_map.jl")
 include("load_inputs/load_minimum_capacity_requirement.jl")
 include("load_inputs/load_load_data.jl")
 include("load_inputs/load_fuels_data.jl")
+include("load_inputs/load_vre_stor_variability.jl")
 
 include("load_inputs/load_inputs.jl")
 
@@ -129,6 +130,10 @@ include("model/resources/storage/investment_charge.jl")
 include("model/resources/storage/storage_asymmetric.jl")
 include("model/resources/storage/storage_symmetric.jl")
 
+include("model/resources/vre_stor/vre_stor.jl")
+
+include("model/resources/vre_stor/vre_stor.jl")
+
 include("model/resources/thermal/thermal.jl")
 include("model/resources/thermal/thermal_commit.jl")
 include("model/resources/thermal/thermal_no_commit.jl")
@@ -161,6 +166,8 @@ include("write_outputs/write_storagedual.jl")
 include("write_outputs/write_subsidy_revenue.jl")
 include("write_outputs/write_time_weights.jl")
 include("write_outputs/choose_output_dir.jl")
+include("write_outputs/write_vre_stor.jl")
+include("write_outputs/write_virtual_discharge.jl")
 
 include("write_outputs/capacity_reserve_margin/write_capacity_value.jl")
 include("write_outputs/capacity_reserve_margin/write_reserve_margin_revenue.jl")
