@@ -25,11 +25,20 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 	SEG = inputs["SEG"]  # Number of lines
 	Z = inputs["Z"]     # Number of zones
 	T = inputs["T"]     # Number of time steps (hours)
+	VRE_STOR = inputs["VRE_STOR"]
 
-	dfCost = DataFrame(Costs = ["cTotal", "cFix", "cVar", "cNSE", "cStart", "cUnmetRsv", "cNetworkExp"])
-	cVar = value(EP[:eTotalCVarOut])+ (!isempty(inputs["STOR_ALL"]) ? value(EP[:eTotalCVarIn]) : 0.0) + (!isempty(inputs["FLEX"]) ? value(EP[:eTotalCVarFlexIn]) : 0.0)
-	cFix = value(EP[:eTotalCFix]) + (!isempty(inputs["STOR_ALL"]) ? value(EP[:eTotalCFixEnergy]) : 0.0) + (!isempty(inputs["STOR_ASYMMETRIC"]) ? value(EP[:eTotalCFixCharge]) : 0.0)
-	dfCost[!,Symbol("Total")] = [objective_value(EP), cFix, cVar, value(EP[:eTotalCNSE]), 0.0, 0.0, 0.0]
+	if !isempty(VRE_STOR)
+		dfCost = DataFrame(Costs = ["cTotal", "cFix", "cVar", "cNSE", "cStart", "cUnmetRsv", "cNetworkExp", "cGridConnection"])
+	else
+		dfCost = DataFrame(Costs = ["cTotal", "cFix", "cVar", "cNSE", "cStart", "cUnmetRsv", "cNetworkExp"])
+	end
+	cVar = value(EP[:eTotalCVarOut]) + (!isempty(inputs["STOR_ALL"]) ? value(EP[:eTotalCVarIn]) : 0.0) + (!isempty(inputs["FLEX"]) ? value(EP[:eTotalCVarFlexIn]) : 0.0) + (!isempty(VRE_STOR) ? value(EP[:eTotalCVar_VRE_STOR]) : 0.0)
+	cFix = value(EP[:eTotalCFix]) + (!isempty(inputs["STOR_ALL"]) ? value(EP[:eTotalCFixEnergy]) : 0.0) + (!isempty(inputs["STOR_ASYMMETRIC"]) ? value(EP[:eTotalCFixCharge]) : 0.0) + (!isempty(VRE_STOR) ? value(EP[:eTotalCFix_VRE_STOR]) : 0.0)
+	if !isempty(VRE_STOR)
+		dfCost[!,Symbol("Total")] = [objective_value(EP), cFix, cVar, value(EP[:eTotalCNSE]), 0.0, 0.0, 0.0, 0.0]
+	else
+		dfCost[!,Symbol("Total")] = [objective_value(EP), cFix, cVar, value(EP[:eTotalCNSE]), 0.0, 0.0, 0.0]
+	end
 
 	if setup["ParameterScale"] == 1
 		dfCost.Total *= ModelScalingFactor^2
@@ -45,6 +54,10 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 
 	if setup["NetworkExpansion"] == 1 && Z > 1
 		dfCost[7,2] = value(EP[:eTotalCNetworkExp])
+	end
+
+	if !isempty(VRE_STOR)
+		dfCost[!,2][9] = value(EP[:eTotalCGrid]) * (setup["ParameterScale"] == 1 ? ModelScalingFactor^2 : 1)
 	end
 
 	if setup["ParameterScale"] == 1
@@ -91,6 +104,99 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 			tempCVar += eCVarFlex_in
 			tempCTotal += eCVarFlex_in
 		end
+		if !isempty(VRE_STOR)
+			dfVRE_STOR = inputs["dfVRE_STOR"]
+			Y_ZONE_VRE_STOR = dfVRE_STOR[dfVRE_STOR[!,:Zone].==z,:R_ID]
+
+			# Fixed Costs
+			eCFix_VRE_STOR = 0.0
+			if !isempty(inputs["VS_SOLAR"])
+				SOLAR_ZONE_VRE_STOR = intersect(Y_ZONE_VRE_STOR, inputs["VS_SOLAR"])
+				eCFix_VRE_STOR += sum(value.(EP[:eCFixSolar][SOLAR_ZONE_VRE_STOR]))
+			end
+			if !isempty(inputs["VS_WIND"])
+				WIND_ZONE_VRE_STOR = intersect(Y_ZONE_VRE_STOR, inputs["VS_WIND"])
+				eCFix_VRE_STOR += sum(value.(EP[:eCFixWind][WIND_ZONE_VRE_STOR]))
+			end
+			if !isempty(inputs["VS_DC"])
+				DC_ZONE_VRE_STOR = intersect(Y_ZONE_VRE_STOR, inputs["VS_DC"])
+				eCFix_VRE_STOR += sum(value.(EP[:eCFixDC][DC_ZONE_VRE_STOR]))
+			end
+			if !isempty(inputs["VS_STOR"])
+				STOR_ALL_ZONE_VRE_STOR = intersect(inputs["VS_STOR"], Y_ZONE_VRE_STOR)
+				eCFix_VRE_STOR += sum(value.(EP[:eCFixEnergy_VS][STOR_ALL_ZONE_VRE_STOR]))
+				
+				if !isempty(inputs["VS_ASYM_DC_CHARGE"])
+					DC_CHARGE_ALL_ZONE_VRE_STOR = intersect(inputs["VS_ASYM_DC_CHARGE"], Y_ZONE_VRE_STOR)
+					eCFix_VRE_STOR += sum(value.(EP[:eCFixCharge_DC][DC_CHARGE_ALL_ZONE_VRE_STOR]))
+				end
+				if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+					DC_DISCHARGE_ALL_ZONE_VRE_STOR = intersect(inputs["VS_ASYM_DC_DISCHARGE"], Y_ZONE_VRE_STOR)
+					eCFix_VRE_STOR += sum(value.(EP[:eCFixDischarge_DC][DC_DISCHARGE_ALL_ZONE_VRE_STOR]))
+				end
+				if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+					AC_DISCHARGE_ALL_ZONE_VRE_STOR = intersect(inputs["VS_ASYM_AC_DISCHARGE"], Y_ZONE_VRE_STOR)
+					eCFix_VRE_STOR += sum(value.(EP[:eCFixDischarge_AC][AC_DISCHARGE_ALL_ZONE_VRE_STOR]))
+				end
+				if !isempty(inputs["VS_ASYM_AC_CHARGE"])
+					AC_CHARGE_ALL_ZONE_VRE_STOR = intersect(inputs["VS_ASYM_AC_CHARGE"], Y_ZONE_VRE_STOR)
+					eCFix_VRE_STOR += sum(value.(EP[:eCFixCharge_AC][AC_CHARGE_ALL_ZONE_VRE_STOR]))
+				end
+			end
+			tempCFix += eCFix_VRE_STOR
+
+			# Variable Costs
+			eCVar_VRE_STOR = 0.0
+			if !isempty(inputs["VS_SOLAR"])
+				eCVar_VRE_STOR += sum(value.(EP[:eCVarOutSolar][SOLAR_ZONE_VRE_STOR,:]))
+			end
+			if !isempty(inputs["VS_WIND"])
+				eCVar_VRE_STOR += sum(value.(EP[:eCVarOutWind][WIND_ZONE_VRE_STOR, :]))
+			end
+			if !isempty(inputs["VS_STOR"])
+				if !isempty(inputs["VS_ASYM_DC_CHARGE"])
+					eCVar_VRE_STOR += sum(value.(EP[:eCVar_Charge_DC][DC_CHARGE_ALL_ZONE_VRE_STOR, :]))
+				end
+				if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+					eCVar_VRE_STOR += sum(value.(EP[:eCVar_Discharge_DC][DC_DISCHARGE_ALL_ZONE_VRE_STOR, :]))
+				end
+				if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+					eCVar_VRE_STOR += sum(value.(EP[:eCVar_Discharge_AC][AC_DISCHARGE_ALL_ZONE_VRE_STOR, :]))
+				end
+				if !isempty(inputs["VS_ASYM_AC_CHARGE"])
+					eCVar_VRE_STOR += sum(value.(EP[:eCVar_Charge_AC][AC_CHARGE_ALL_ZONE_VRE_STOR, :]))
+				end
+			end
+			tempCVar += eCVar_VRE_STOR
+
+			# Total Added Costs
+			tempCTotal += (eCFix_VRE_STOR + eCVar_VRE_STOR)
+		end
+
+		if setup["UCommit"] >= 1
+			eCStart = sum(value.(EP[:eCStart][COMMIT_ZONE,:]))
+			tempCStart += eCStart
+			tempCTotal += eCStart
+		end
+
+		tempCNSE = sum(value.(EP[:eCNSE][:,:,z]))
+		tempCTotal += tempCNSE
+
+		if setup["VreStor"] == 1
+			dfGen_VRE_STOR = inputs["dfGen_VRE_STOR"]
+			Y_ZONE_VRE_STOR = dfGen_VRE_STOR[dfGen_VRE_STOR[!,:Zone].==z,:R_ID]
+
+			# Fixed Costs
+			eCFix_VRE_STOR = sum(value.(EP[:eCFix_VRE_STOR][Y_ZONE_VRE_STOR]))
+			tempCFix += eCFix_VRE_STOR
+
+			# Variable Costs
+			eCVar_VRE_STOR = sum(value.(EP[:eCVar_out_VRE_STOR][Y_ZONE_VRE_STOR,:]))
+			tempCVar += eCVar_VRE_STOR
+
+			# Total Added Costs
+			tempCTotal += (eCFix_VRE_STOR + eCVar_VRE_STOR)
+		end
 
 		if setup["UCommit"] >= 1
 			eCStart = sum(value.(EP[:eCStart][COMMIT_ZONE,:]))
@@ -108,7 +214,11 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 			tempCNSE *= ModelScalingFactor^2
 			tempCStart *= ModelScalingFactor^2
 		end
-		dfCost[!,Symbol("Zone$z")] = [tempCTotal, tempCFix, tempCVar, tempCNSE, tempCStart, "-", "-"]
+		if !isempty(VRE_STOR)
+			dfCost[!,Symbol("Zone$z")] = [tempCTotal, tempCFix, tempCVar, tempCNSE, tempCStart, "-", "-", "-"]
+		else
+			dfCost[!,Symbol("Zone$z")] = [tempCTotal, tempCFix, tempCVar, tempCNSE, tempCStart, "-", "-"]
+		end
 	end
 	CSV.write(joinpath(path, "costs.csv"), dfCost)
 end
