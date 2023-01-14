@@ -12,7 +12,19 @@ function write_curtailment(path::AbstractString, inputs::Dict, setup::Dict, EP::
 	curtailment = zeros(G, T)
 	scale_factor = setup["ParameterScale"] == 1 ? ModelScalingFactor : 1
 	curtailment[VRE, :] = scale_factor * (value.(EP[:eTotalCap][VRE]) .* inputs["pP_Max"][VRE, :] .- value.(EP[:vP][VRE, :]))
-
+	
+	VRE_STOR = inputs["VRE_STOR"]
+	if !isempty(VRE_STOR)
+        SOLAR = inputs["VS_SOLAR"]
+        WIND = inputs["VS_WIND"]
+		dfVRE_STOR = inputs["dfVRE_STOR"]
+		if !isempty(SOLAR)
+			curtailment[SOLAR, :] = scale_factor * (value.(EP[:eTotalCap_SOLAR])[SOLAR] .* inputs["pP_Max_Solar"][SOLAR, :] .- value.(EP[:vP_SOLAR][SOLAR, :]).data) .* dfVRE_STOR[(dfVRE_STOR.SOLAR.!=0), :EtaInverter]
+		end
+		if !isempty(WIND)
+			curtailment[WIND, :] = scale_factor * (value.(EP[:eTotalCap_WIND][WIND]) .* inputs["pP_Max_Wind"][WIND, :] .- value.(EP[:vP_WIND][WIND, :]).data)
+		end
+	end
 	dfCurtailment.AnnualSum = curtailment * inputs["omega"]
 	dfCurtailment = hcat(dfCurtailment, DataFrame(curtailment, :auto))
 	auxNew_Names=[Symbol("Resource");Symbol("Zone");Symbol("AnnualSum");[Symbol("t$t") for t in 1:T]]
