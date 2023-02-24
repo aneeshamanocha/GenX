@@ -71,6 +71,8 @@ function configure_settings(settings_path::String)
     set_default_if_absent!(settings, "FuelMax", 0)
     # Hurdle Rate; 0 = not active; 1 = active
     set_default_if_absent!(settings, "HurdleRate", 0)
+    # Max Build Rate; 0 = not active; 1 = active
+    set_default_if_absent!(settings, "MaxBuild", 0)
 
 return settings
 end

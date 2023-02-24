@@ -16,11 +16,8 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 
 @doc raw"""
 	function write_multi_stage_capacities_discharge(outpath::String, settings_d::Dict)
-
 This function writes the file capacities\_multi\_stage.csv to the Results directory. This file contains starting resource capacities from the first model stage and end resource capacities for the first and all subsequent model stages.
-
 inputs:
-
   * outpath – String which represents the path to the Results directory.
   * settings\_d - Dictionary containing settings dictionary configured in the multi-stage settings file multi\_stage\_settings.yml.
 """

@@ -16,11 +16,8 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 
 @doc raw"""
 	function write_multi_stage_costs(outpath::String, settings_d::Dict)
-
 This function writes the file costs\_multi\_stage.csv to the Results directory. This file contains variable, fixed, startup, network expansion, unmet reserve, and non-served energy costs discounted to year zero.
-
 inputs:
-
   * outpath – String which represents the path to the Results directory.
   * settings\_d - Dictionary containing settings dictionary configured in the multi-stage settings file multi\_stage\_settings.yml.
 """

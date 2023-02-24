@@ -16,15 +16,11 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 
 @doc raw"""
 	function get_retirement_stage(cur_stage::Int, stage_len::Int, lifetime::Int, stage_lens::Array{Int, 1})
-
 This function determines the model stage before which all newly built capacity must be retired. Used to enforce endogenous lifetime retirements in multi-stage modeling.
-
 inputs:
-
   * cur\_stage – An Int representing the current model stage $p$.
   * lifetime – An Int representing the lifetime of a particular resource.
   * stage\_lens – An Int array representing the length $L$ of each model stage.
-
 returns: An Int representing the model stage in before which the resource must retire due to endogenous lifetime retirements.
 """
 function get_retirement_stage(cur_stage::Int, lifetime::Int, stage_lens::Array{Int, 1})

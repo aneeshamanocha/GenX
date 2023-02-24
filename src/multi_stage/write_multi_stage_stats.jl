@@ -16,11 +16,8 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 
 @doc raw"""
 	function write_multi_stage_stats(outpath::String, stats_d::Dict)
-
 This function writes the file stats\_multi\_stage.csv. to the Results directory. This file contains the runtime, upper bound, lower bound, and relative optimality gap for each iteration of the DDP algorithm.
-
 inputs:
-
   * outpath – String which represents the path to the Results directory.
   * stats\_d – Dictionary which contains the run time, upper bound, and lower bound of each DDP iteration.
 """

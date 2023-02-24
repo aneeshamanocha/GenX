@@ -72,6 +72,10 @@ function load_inputs(setup::Dict,path::AbstractString)
 		load_co2_cap!(setup, path, inputs)
 	end
 
+	if setup["MaxBuild"] >= 1
+		load_maximum_rate_build!(path, inputs, setup)
+	end
+
 	# Read in mapping of modeled periods to representative periods
 	if is_period_map_necessary(setup, path, inputs) && is_period_map_exist(setup, path, inputs)
 		load_period_map!(setup, path, inputs)

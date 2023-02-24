@@ -96,6 +96,7 @@ include("load_inputs/load_period_map.jl")
 include("load_inputs/load_minimum_capacity_requirement.jl")
 include("load_inputs/load_load_data.jl")
 include("load_inputs/load_fuels_data.jl")
+include("load_inputs/load_maximum_rate_build.jl")
 
 include("load_inputs/load_inputs.jl")
 
@@ -146,6 +147,7 @@ include("model/policies/co2_cap.jl")
 include("model/policies/energy_share_requirement.jl")
 include("model/policies/cap_reserve_margin.jl")
 include("model/policies/minimum_capacity_requirement.jl")
+include("model/policies/maximum_build_rate.jl")
 
 include("model/generate_model.jl")
 include("model/solve_model.jl")

@@ -16,7 +16,6 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 
 @doc raw"""
     write_multi_stage_settings(outpath::AbstractString, settings_d::Dict)
-
 Function for writing the multi-stage settings file to the output path for future reference.
 """
 function write_multi_stage_settings(outpath::AbstractString, settings_d::Dict)

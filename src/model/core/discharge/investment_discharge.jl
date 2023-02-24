@@ -186,4 +186,11 @@ function investment_discharge!(EP::Model, inputs::Dict, setup::Dict)
 		EP[:eMinCapRes] += eMinCapResInvest
 	end
 
+	if setup["MaxBuild"] == 1
+		@expression(EP, eMaxBuildRateTotalInvest[maxbuildrate = 1:inputs["NumberOfMaxBuildRates"]], sum(EP[:eTotalCap][y] for y in dfGen[(dfGen[!,Symbol("MaxRateTag_$maxbuildrate")].== 1) ,:][!,:R_ID]))
+		EP[:eMaxBuildRateTotal] += eMaxBuildRateTotalInvest
+
+		@expression(EP, eMaxBuildRateExistingInvest[maxbuildrate = 1:inputs["NumberOfMaxBuildRates"]], sum(EP[:eExistingCap][y] for y in dfGen[(dfGen[!,Symbol("MaxRateTag_$maxbuildrate")].== 1) ,:][!,:R_ID]))
+		EP[:eMaxBuildRateExisting] += eMaxBuildRateExistingInvest
+	end
 end

@@ -126,6 +126,12 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 		@expression(EP, eMinCapRes[mincap = 1:inputs["NumberOfMinCapReqs"]], 0)
 	end
 
+	# Max Build Rate
+	if (setup["MaxBuild"] == 1)
+		@expression(EP, eMaxBuildRateTotal[maxbuildrate = 1:inputs["NumberOfMaxBuildRates"]], 0)
+		@expression(EP, eMaxBuildRateExisting[maxbuildrate = 1:inputs["NumberOfMaxBuildRates"]], 0)
+	end
+
 	# Infrastructure
 	discharge!(EP, inputs, setup)
 
@@ -212,6 +218,10 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 
 	if (setup["MinCapReq"] == 1)
 		minimum_capacity_requirement!(EP, inputs, setup)
+	end
+
+	if (setup["MaxBuild"] == 1)
+		maximum_build_rate!(EP, inputs, setup)
 	end
 
 	## Define the objective function
