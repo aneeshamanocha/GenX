@@ -44,9 +44,24 @@ function write_subsidy_revenue(path::AbstractString, inputs::Dict, setup::Dict, 
 				MIN_CAP_GEN_SOLAR = dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagSolar_$mincap")].==1), :R_ID]
 				MIN_CAP_GEN_WIND = dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagWind_$mincap")].==1), :R_ID]
 				MIN_CAP_GEN_STOR = dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagStor_$mincap")].==1), :R_ID]
-				dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SOLAR] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SOLAR] + (value.(EP[:eTotalCap_SOLAR][MIN_CAP_GEN_SOLAR])) * (dual.(EP[:cZoneMinCapReq][mincap]))
+				dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SOLAR] .= (dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SOLAR] .* dfVRE_STOR[MIN_CAP_GEN_SOLAR, :EtaInverter]) + (value.(EP[:eTotalCap_SOLAR][MIN_CAP_GEN_SOLAR]) .* dfVRE_STOR[MIN_CAP_GEN_SOLAR, :EtaInverter]) * (dual.(EP[:cZoneMinCapReq][mincap]))
 				dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_WIND] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_WIND] + (value.(EP[:eTotalCap_WIND][MIN_CAP_GEN_WIND])) * (dual.(EP[:cZoneMinCapReq][mincap]))
-				dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_STOR] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_STOR] + (value.(EP[:eTotalCap_STOR][MIN_CAP_GEN_STOR])) * (dual.(EP[:cZoneMinCapReq][mincap]))
+				if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+					MIN_CAP_GEN_ASYM_DC_DIS = intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagStor_$mincap")].==1), :R_ID])
+					dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_ASYM_DC_DIS] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_ASYM_DC_DIS] + (value.(EP[:eTotalCapDischarge_DC][MIN_CAP_GEN_ASYM_DC_DIS]) .* dfVRE_STOR[MIN_CAP_GEN_ASYM_DC_DIS, :EtaInverter]) * (dual.(EP[:cZoneMinCapReq][mincap]))
+				end
+				if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+					MIN_CAP_GEN_ASYM_AC_DIS = intersect(inputs["VS_ASYM_AC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagStor_$mincap")].==1), :R_ID])
+					dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_ASYM_AC_DIS] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_ASYM_AC_DIS] + (value.(EP[:MIN_CAP_GEN_ASYM_AC_DIS][MIN_CAP_GEN_ASYM_DC_DIS])) * (dual.(EP[:cZoneMinCapReq][mincap]))
+				end		
+				if !isempty(inputs["VS_SYM_DC"])
+					MIN_CAP_GEN_SYM_DC = intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagStor_$mincap")].==1), :R_ID])
+					dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SYM_DC] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SYM_DC] + (value.(EP[:eTotalCap_STOR][MIN_CAP_GEN_SYM_DC]) .* dfVRE_STOR[MIN_CAP_GEN_SYM_DC, :Power_to_Energy_DC] .* dfVRE_STOR[MIN_CAP_GEN_SYM_DC, :EtaInverter]) * (dual.(EP[:cZoneMinCapReq][mincap]))
+				end
+				if !isempty(inputs["VS_SYM_AC"])
+					MIN_CAP_GEN_SYM_AC = intersect(inputs["VS_SYM_AC"], dfVRE_STOR[(dfVRE_STOR[!, Symbol("MinCapTagStor_$mincap")].==1), :R_ID])
+					dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SYM_AC] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN_SYM_AC] + (value.(EP[:eTotalCap_STOR][MIN_CAP_GEN_SYM_AC]) .* dfVRE_STOR[MIN_CAP_GEN_SYM_AC, :Power_to_Energy_AC]) * (dual.(EP[:cZoneMinCapReq][mincap]))
+				end
 			else
 				MIN_CAP_GEN = dfGen[(dfGen[!, Symbol("MinCapTag_$mincap")].==1), :R_ID]
 				dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN] .= dfRegSubRevenue.SubsidyRevenue[MIN_CAP_GEN] + (value.(EP[:eTotalCap][MIN_CAP_GEN])) * (dual.(EP[:cZoneMinCapReq][mincap]))

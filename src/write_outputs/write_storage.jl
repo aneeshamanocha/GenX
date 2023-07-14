@@ -45,7 +45,7 @@ function write_storage(path::AbstractString, inputs::Dict,setup::Dict, EP::Model
 	    storagevcapvalue[FLEX, :] = value.(EP[:vS_FLEX][FLEX, :])
 	end
 	if !isempty(VRE_STOR) && !isempty(VS_STOR)
-	    storagevcapvalue[VS_STOR, :] = value.(EP[:vS_VRE_STOR][STORVS_STOR_VS, :])
+	    storagevcapvalue[VS_STOR, :] = value.(EP[:vS_VRE_STOR][VS_STOR, :])
 	end
 	if setup["ParameterScale"] == 1
 	    storagevcapvalue *= ModelScalingFactor

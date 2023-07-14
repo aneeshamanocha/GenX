@@ -183,7 +183,7 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
     # Minimum Capacity Requirement
     if MinCapReq == 1
-        @expression(EP, eMinCapResSolar[mincap = 1:inputs["NumberOfMinCapReqs"]], sum(EP[:eTotalCap_SOLAR][y]*by_rid(y,:EtaInverter) 
+        @expression(EP, eMinCapResSolar[mincap = 1:inputs["NumberOfMinCapReqs"]], by_rid(y,:EtaInverter)*sum(EP[:eTotalCap_SOLAR][y] 
             for y in intersect(SOLAR, dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagSolar_$mincap")].== 1),:][!,:R_ID])))
 		EP[:eMinCapRes] += eMinCapResSolar
 
@@ -191,10 +191,31 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
             for y in intersect(WIND, dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagWind_$mincap")].== 1),:][!,:R_ID])))
 		EP[:eMinCapRes] += eMinCapResWind
 
-        @expression(EP, eMinCapResStor[mincap = 1:inputs["NumberOfMinCapReqs"]], 
-            sum(by_rid(y,:Power_to_Energy_DC)*EP[:eTotalCap_STOR][y] 
-            for y in intersect(STOR, dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
-		EP[:eMinCapRes] += eMinCapResStor
+        if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+            @expression(EP, eMinCapResACDis[mincap = 1:inputs["NumberOfMinCapReqs"]], sum(EP[:eTotalCapDischarge_AC][y] 
+                for y in intersect(inputs["VS_ASYM_AC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMinCapRes] += eMinCapResACDis
+        end
+
+        if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+            @expression(EP, eMinCapResDCDis[mincap = 1:inputs["NumberOfMinCapReqs"]], by_rid(y,:EtaInverter)*sum(EP[:eTotalCapDischarge_DC][y] 
+                for y in intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMinCapRes] += eMinCapResDCDis
+        end
+
+        if !isempty(inputs["VS_SYM_AC"])
+            @expression(EP, eMinCapResACStor[mincap = 1:inputs["NumberOfMinCapReqs"]], 
+            sum(by_rid(y,:Power_to_Energy_AC)*EP[:eTotalCap_STOR][y] 
+                for y in intersect(inputs["VS_SYM_AC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMinCapRes] += eMinCapResACStor
+        end
+
+        if !isempty(inputs["VS_SYM_DC"])
+            @expression(EP, eMinCapResDCStor[mincap = 1:inputs["NumberOfMinCapReqs"]], 
+            sum(by_rid(y,:Power_to_Energy_DC)*by_rid(y,:EtaInverter)*EP[:eTotalCap_STOR][y] 
+                for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMinCapRes] += eMinCapResDCStor
+        end
     end
 
     # Capacity Reserve Margin Requirement

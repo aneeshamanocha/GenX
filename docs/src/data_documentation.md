@@ -636,10 +636,10 @@ This file contains additional cost and performance parameters for specifically c
 |Fixed\_OM\_Cost\_Charge\_DC\_per\_MWyr | Fixed operations and maintenance cost of the charging component of a storage technology with `STOR_DC_CHARGE = 2` ($/MW-DC/year).|
 |Fixed\_OM\_Cost\_Discharge\_AC\_per\_MWyr | Fixed operations and maintenance cost of the discharging component of a storage technology with `STOR_AC_DISCHARGE = 2` ($/MW-AC/year).|
 |Fixed\_OM\_Cost\_Charge\_AC\_per\_MWyr | Fixed operations and maintenance cost of the charging component of a storage technology with `STOR_AC_CHARGE = 2` ($/MW-AC/year).|
-|Var\_OM\_Cost\_per\_MWh\_Solar | Variable operations and maintenance cost of the solar PV component ($/MWh). |
+|Var\_OM\_Cost\_per\_MWh\_Solar | Variable operations and maintenance cost of the solar PV component (multiplied by the inverter efficiency for AC terms) ($/MWh). |
 |Var\_OM\_Cost\_per\_MWh\_Wind | Variable operations and maintenance cost of the wind component ($/MWh). |
-|Var\_OM\_Cost\_per\_MWh\_Discharge_DC | Variable operations and maintenance cost of the discharging component of a storage technology with `STOR_DC_DISCHARGE = 2` ($/MWh). |
-|Var\_OM\_Cost\_per\_MWh\_Charge_DC | Variable operations and maintenance cost of the charging component of a storage technology with `STOR_DC_CHARGE = 2` ($/MWh). |
+|Var\_OM\_Cost\_per\_MWh\_Discharge_DC | Variable operations and maintenance cost of the discharging component of a storage technology with `STOR_DC_DISCHARGE = 2` (multiplied by the inverter efficiency for AC terms) ($/MWh). |
+|Var\_OM\_Cost\_per\_MWh\_Charge_DC | Variable operations and maintenance cost of the charging component of a storage technology with `STOR_DC_CHARGE = 2` (divided by the inverter efficiency for AC terms) ($/MWh). |
 |Var\_OM\_Cost\_per\_MWh\_Discharge_AC | Variable operations and maintenance cost of the discharging component of a storage technology with `STOR_AC_DISCHARGE = 2` ($/MWh). |
 |Var\_OM\_Cost\_per\_MWh\_Charge_AC | Variable operations and maintenance cost of the charging component of a storage technology with `STOR_AC_CHARGE = 2` ($/MWh). |
 |**Technical performance parameters**|
@@ -690,9 +690,9 @@ This file contains additional cost and performance parameters for specifically c
 |**CapacityReserveMargin > 0**||
 |CapRes\_VreStor* |[0,1], Fraction of the resource capacity eligible for contributing to the capacity reserve margin constraint (e.g. derate factor). |
 |**MinCapReq = 1**|
-|MinCapTag\_Solar*| Eligibility of resources with a solar PV component to participate in Minimum Technology Carveout constraint. \* corresponds to the ith row of the file `Minimum_capacity_requirement.csv`. |
-|MinCapTag\_Wind*| Eligibility of resources with a wind component to participate in Minimum Technology Carveout constraint. \* corresponds to the ith row of the file `Minimum_capacity_requirement.csv`. |
-|MinCapTag\_Stor*| Eligibility of resources with a wind component to participate in Minimum Technology Carveout constraint. \* corresponds to the ith row of the file `Minimum_capacity_requirement.csv`.|
+|MinCapTagSolar\_*| Eligibility of resources with a solar PV component (multiplied by the inverter efficiency for AC terms) to participate in Minimum Technology Carveout constraint. \* corresponds to the ith row of the file `Minimum_capacity_requirement.csv`. |
+|MinCapTagWind\_*| Eligibility of resources with a wind component to participate in Minimum Technology Carveout constraint (AC terms). \* corresponds to the ith row of the file `Minimum_capacity_requirement.csv`. |
+|MinCapTagStor\_*| Eligibility of resources with a storage component to participate in Minimum Technology Carveout constraint (discharge capacity in AC terms). \* corresponds to the ith row of the file `Minimum_capacity_requirement.csv`.|
 
 #### 2.2.9 Vre\_and\_stor\_solar\_variability.csv
 

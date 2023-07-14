@@ -55,7 +55,7 @@ function write_net_revenue(path::AbstractString, inputs::Dict, setup::Dict, EP::
 		end	
 		if !isempty(WIND)
 			dfNetRevenue.Inv_cost_MW[WIND] += dfVRE_STOR[(dfVRE_STOR.WIND.!=0),:Inv_Cost_Wind_per_MWyr] .* value.(EP[:vWINDCAP]).data
-		end	
+		end
 	end
 	if setup["ParameterScale"] == 1
 		dfNetRevenue.Inv_cost_MWh *= ModelScalingFactor # converting Million US$ to US$
