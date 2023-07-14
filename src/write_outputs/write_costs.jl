@@ -175,7 +175,6 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 				eCVar_VRE_STOR += sum(value.(EP[:eCVarOutSolar][SOLAR_ZONE_VRE_STOR,:]))
 			end
 			if !isempty(inputs["VS_WIND"])
-				WIND_ZONE_VRE_STOR = intersect(Y_ZONE_VRE_STOR, inputs["VS_WIND"])
 				eCVar_VRE_STOR += sum(value.(EP[:eCVarOutWind][WIND_ZONE_VRE_STOR, :]))
 			end
 			if !isempty(inputs["VS_STOR"])

@@ -72,7 +72,7 @@ function load_inputs(setup::Dict,path::AbstractString)
 		load_co2_cap!(setup, path, inputs)
 	end
 
-	if setup["VreStor"] == 1
+	if !isempty(inputs["VRE_STOR"])
 		load_vre_stor_variability!(setup, path, inputs)
 	end
 

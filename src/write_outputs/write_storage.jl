@@ -28,7 +28,7 @@ function write_storage(path::AbstractString, inputs::Dict,setup::Dict, EP::Model
 	FLEX = inputs["FLEX"]
 	VRE_STOR = inputs["VRE_STOR"]
 	if !isempty(VRE_STOR)
-		STOR_VS = inputs["VS_STOR"]
+		VS_STOR = inputs["VS_STOR"]
 	end
 	
 	# Storage level (state of charge) of each resource in each time step
@@ -44,8 +44,8 @@ function write_storage(path::AbstractString, inputs::Dict,setup::Dict, EP::Model
 	if !isempty(inputs["FLEX"])
 	    storagevcapvalue[FLEX, :] = value.(EP[:vS_FLEX][FLEX, :])
 	end
-	if !isempty(VRE_STOR) && !isempty(STOR_VS)
-	    storagevcapvalue[STOR_VS, :] = value.(EP[:vS_VRE_STOR][STOR_VS, :])
+	if !isempty(VRE_STOR) && !isempty(VS_STOR)
+	    storagevcapvalue[VS_STOR, :] = value.(EP[:vS_VRE_STOR][STORVS_STOR_VS, :])
 	end
 	if setup["ParameterScale"] == 1
 	    storagevcapvalue *= ModelScalingFactor

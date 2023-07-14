@@ -32,10 +32,9 @@ function write_storagedual(path::AbstractString, inputs::Dict, setup::Dict, EP::
 	VRE_STOR = inputs["VRE_STOR"]
 	if !isempty(VRE_STOR)
 		VS_STOR = inputs["VS_STOR"]
-	else
-		VS_STOR = []
+		VS_LDS = inputs["VS_LDS"]
+		VS_NONLDS = setdiff(VS_STOR, VS_LDS)
 	end
-	hours_per_subperiod = inputs["hours_per_subperiod"] #total number of hours per subperiod
 
 	# # Dual of storage level (state of charge) balance of each resource in each time step
 	dfStorageDual = DataFrame(Resource = inputs["RESOURCES"], Zone = dfGen[!, :Zone])
@@ -53,22 +52,17 @@ function write_storagedual(path::AbstractString, inputs::Dict, setup::Dict, EP::
 			dual_values[STOR_ALL_LDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart][START_SUBPERIODS, STOR_ALL_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
 		end
 	end
-
-	# # Loop over W for VRE-Storage resources
-	# if !isempty(VS_STOR)
-	# 	VS_STOR = inputs["VS_STOR"]
-	# 	VRE_STOR_ALL_NONLDS = setdiff(VRE_STOR, inputs["VS_LDS"])
-	# 	VRE_STOR_ALL_LDS = intersect(VRE_STOR, inputs["VS_LDS"])
-	# 	dual_values[VS_STOR, INTERIOR_SUBPERIODS] = (dual.(EP[:cSoCBalInterior_VRE_STOR][INTERIOR_SUBPERIODS, VS_STOR]).data ./ inputs["omega"][INTERIOR_SUBPERIODS])'
-	# 	dual_values[VRE_STOR_ALL_NONLDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart_VRE_STOR][START_SUBPERIODS, VRE_STOR_ALL_NONLDS]).data ./ inputs["omega"][START_SUBPERIODS])'
-	# 	if !isempty(VRE_STOR_ALL_LDS)
-	# 		if setup["OperationWrapping"] == 1
-	# 			dual_values[VRE_STOR_ALL_LDS, START_SUBPERIODS] = (dual.(EP[:cVreStorSoCBalLongDurationStorageStart][1:REP_PERIOD, VRE_STOR_ALL_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
-	# 		else
-	# 			dual_values[VRE_STOR_ALL_LDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart_VRE_STOR][START_SUBPERIODS, VRE_STOR_ALL_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
-	# 		end
-	# 	end
-	# end
+	if !isempty(VRE_STOR)
+		dual_values[VS_STOR, INTERIOR_SUBPERIODS] = (dual.(EP[:cSoCBalInterior_VRE_STOR][INTERIOR_SUBPERIODS, VS_STOR]).data ./ inputs["omega"][INTERIOR_SUBPERIODS])'
+		dual_values[VS_NONLDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart_VRE_STOR][START_SUBPERIODS, VS_NONLDS]).data ./ inputs["omega"][START_SUBPERIODS])'
+		if !isempty(VS_LDS)
+			if setup["OperationWrapping"] == 1
+				dual_values[VS_LDS, START_SUBPERIODS] = (dual.(EP[:cVreStorSoCBalLongDurationStorageStart][1:REP_PERIOD, VS_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
+			else
+				dual_values[VS_LDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart_VRE_STOR][START_SUBPERIODS, VS_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
+			end
+		end
+	end
 
 	if setup["ParameterScale"] == 1
 	    dual_values *= ModelScalingFactor

@@ -18,7 +18,14 @@ function write_virtual_discharge(path::AbstractString, inputs::Dict, setup::Dict
 	    virtual_discharge[STOR_ALL, :] = (value.(EP[:vCAPCONTRSTOR_VP][STOR_ALL, :]).data - value.(EP[:vCAPCONTRSTOR_VCHARGE][STOR_ALL, :]).data) * scale_factor
 	end
     if !isempty(VRE_STOR)
-	    virtual_discharge[VRE_STOR, :] = (value.(EP[:vCAPCONTRSTOR_VP_VRE_STOR][VRE_STOR, :]).data - value.(EP[:vCAPCONTRSTOR_VCHARGE_VRE_STOR][VRE_STOR, :]).data) * scale_factor
+		DC_DISCHARGE = inputs["VS_STOR_DC_DISCHARGE"]
+		DC_CHARGE = inputs["VS_STOR_DC_CHARGE"]
+		AC_DISCHARGE = inputs["VS_STOR_AC_DISCHARGE"]
+		AC_CHARGE = inputs["VS_STOR_AC_CHARGE"]
+	    virtual_discharge[DC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data .* dfVRE_STOR[(dfVRE_STOR.VS_STOR_DC_DISCHARGE.!=0), :EtaInverter]) 
+		virtual_discharge[DC_CHARGE, :] .-= (value.(EP[:vCAPRES_DC_CHARGE][DC_CHARGE, :]).data ./ dfVRE_STOR[(dfVRE_STOR.VS_STOR_DC_CHARGE.!=0), :EtaInverter])
+		virtual_discharge[AC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data)
+		virtual_discharge[AC_CHARGE, :] .-= (value.(EP[:vCAPRES_AC_CHARGE][AC_CHARGE, :]).data)
 	end
 
 	dfVirtualDischarge.AnnualSum .= virtual_discharge * inputs["omega"]

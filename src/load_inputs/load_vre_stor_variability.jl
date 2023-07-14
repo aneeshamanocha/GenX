@@ -15,29 +15,28 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 @doc raw"""
-	load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs_vre_stor::Dict)
+	load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs::Dict)
 
-Function for reading input parameters related to hourly maximum capacity factors for co-located and co-optimized generators
+Read input parameters related to hourly maximum capacity factors for the solar PV 
+	(DC capacity factors) component and wind (AC capacity factors) component of co-located
+	generators
 """
-function load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs_vre_stor::Dict)
+function load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs::Dict)
 
 	# Hourly capacity factors
 	data_directory = joinpath(path, setup["TimeDomainReductionFolder"])
-
     if setup["TimeDomainReduction"] == 1  && time_domain_reduced_files_exist(data_directory)
-		println("VRE-STOR TDR")
 		my_dir = data_directory
 	else
         my_dir = path
 	end
 	filename = "Vre_and_stor_solar_variability.csv"
-	println(my_dir)
 	vre_stor_solar = load_dataframe(joinpath(my_dir, filename))
 
 	filename = "Vre_and_stor_wind_variability.csv"
 	vre_stor_wind = load_dataframe(joinpath(my_dir, filename))
 
-	all_resources = inputs_vre_stor["RESOURCES"]
+	all_resources = inputs["RESOURCES"]
 
 	existing_variability = names(vre_stor_solar)
     for r in all_resources
@@ -55,18 +54,13 @@ function load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs_vr
         end
     end
 
-	# Reorder DataFrame to R_ID order (order provided in Vre_and_storage_data.csv)
+	# Reorder DataFrame to R_ID order (order provided in Vre_and_stor_data.csv)
 	select!(vre_stor_solar, [:Time_Index; Symbol.(all_resources) ])
 	select!(vre_stor_wind, [:Time_Index; Symbol.(all_resources) ])
 
 	# Maximum power output and variability of each energy resource
-	inputs_vre_stor["pP_Max_Solar"] = transpose(Matrix{Float64}(vre_stor_solar[1:inputs_vre_stor["T"],2:(inputs_vre_stor["G"]+1)]))
-	inputs_vre_stor["pP_Max_Wind"] = transpose(Matrix{Float64}(vre_stor_wind[1:inputs_vre_stor["T"],2:(inputs_vre_stor["G"]+1)]))
+	inputs["pP_Max_Solar"] = transpose(Matrix{Float64}(vre_stor_solar[1:inputs["T"],2:(inputs["G"]+1)]))
+	inputs["pP_Max_Wind"] = transpose(Matrix{Float64}(vre_stor_wind[1:inputs["T"],2:(inputs["G"]+1)]))
 
-	VRE_SOLAR = inputs_vre_stor["VS_SOLAR"]
-	VRE_WIND = inputs_vre_stor["VS_WIND"]
-	println(inputs_vre_stor["pP_Max_Solar"][VRE_SOLAR, :])
-	println(inputs_vre_stor["pP_Max_Wind"][VRE_WIND, :])
-	
 	println(filename * " Successfully Read!")
 end

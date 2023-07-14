@@ -15,57 +15,6 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 @doc raw"""
-check_vre_stor_validity(df::DataFrame)
-
-	Function for checking that no other flags have been activated for VRE-STOR module.
-"""
-function check_vre_stor_validity(df::DataFrame)
-	# Determine if any VRE-STOR resources exist
-	vre_stor = is_nonzero(df, :VRE_STOR)
-	r_id = df[:, :R_ID]
-
-	error_strings = String[]
-
-	function error_feedback(data::Vector{Int}, col::Symbol)::String
-		string("Generators ", data, ", marked as VRE-STOR, have ", col, " ≠ 0. ", col, " must be 0.")
-	end
-
-	function check_any_nonzero_with_vre_stor!(error_strings::Vector{String}, df::DataFrame, col::Symbol)
-		check = vre_stor .& is_nonzero(df, col)
-		if any(check)
-			e = error_feedback(r_id[check], col)
-			push!(error_strings, e)
-		end
-	end
-
-	# Confirm that any other flags are not activated (all other flags should be activated in the vre_stor_data.csv)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :STOR)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :THERM)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :FLEX)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :HYDRO)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :VRE)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :MUST_RUN)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :LDS)
-
-	return error_strings
-end
-
-@doc raw"""
-	summarize_errors(error_strings::Vector{String})
-
-	Function for printing out to user how many errors there were in the configuration of the generators data.
-"""
-function summarize_errors(error_strings::Vector{String})
-	if !isempty(error_strings)
-		println(length(error_strings), " problem(s) in the configuration of the generators:")
-		for es in error_strings
-			println(es)
-		end
-		error("There were errors in the configuration of the generators.")
-	end
-end
-
-@doc raw"""
 	load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Dict, fuel_costs::Dict, fuel_CO2::Dict)
 
 Function for reading input parameters related to electricity generators (plus storage and flexible demand resources)
@@ -304,26 +253,151 @@ end
 
 
 @doc raw"""
-	load_vre_stor_data(setup::Dict, path::AbstractString, inputs_gen::Dict, gen_in::DataFrame)
-Function for reading input parameters related to resources that combine VRE and storage.
-If there are no VRE_STOR columns, VRE_STOR is a vector of length 0 and dfVRE_STOR is an empty Dataframe.
+	check_vre_stor_validity(df::DataFrame)
+
+Function for checking that no other technology flags have been activated and specific data inputs
+	have been zeroed for the co-located VRE-STOR module
 """
-function load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict, gen_in::DataFrame)
+function check_vre_stor_validity(df::DataFrame)
+	# Determine if any VRE-STOR resources exist
+	vre_stor = is_nonzero(df, :VRE_STOR)
+	r_id = df[:, :R_ID]
+
 	error_strings = String[]
 
+	function error_feedback(data::Vector{Int}, col::Symbol)::String
+		string("Generators ", data, ", marked as VRE-STOR, have ", col, " ≠ 0. ", col, " must be 0.")
+	end
+
+	function check_any_nonzero_with_vre_stor!(error_strings::Vector{String}, df::DataFrame, col::Symbol)
+		check = vre_stor .& is_nonzero(df, col)
+		if any(check)
+			e = error_feedback(r_id[check], col)
+			push!(error_strings, e)
+		end
+	end
+
+	# Confirm that any other flags/inputs are not activated (all other flags should be activated in the vre_stor_data.csv)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :STOR)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :THERM)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :FLEX)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :HYDRO)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :VRE)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :MUST_RUN)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :LDS)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :LDS)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :Var_OM_Cost_per_MWh)
+	check_any_nonzero_with_vre_stor!(error_strings, df, :Var_OM_Cost_per_MWh_In)
+
+	return error_strings
+end
+
+@doc raw"""
+	summarize_errors(error_strings::Vector{String})
+
+Function for printing out to user how many errors there were in the configuration of the generators data
+"""
+function summarize_errors(error_strings::Vector{String})
+	if !isempty(error_strings)
+		println(length(error_strings), " problem(s) in the configuration of the generators:")
+		for es in error_strings
+			println(es)
+		end
+		error("There were errors in the configuration of the generators.")
+	end
+end
+
+@doc raw"""
+    split_storage_resources!(df::DataFrame, inputs::Dict, setup::Dict)
+
+For co-located VRE-storage resources, this function returns the storage type 
+	(1. long-duration or short-duration storage, 2. symmetric or asymmetric storage)
+    for charging and discharging capacities
+"""
+function split_storage_resources!(df::DataFrame, inputs::Dict, setup::Dict)
+
+	VRE_STOR = inputs["VRE_STOR"]
+
+	# All Storage Resources
+	inputs["VS_STOR"] = union(df[df.STOR_DC_CHARGE.>=1,:R_ID], df[df.STOR_AC_CHARGE.>=1,:R_ID], 
+		df[df.STOR_DC_DISCHARGE.>=1,:R_ID], df[df.STOR_AC_DISCHARGE.>=1,:R_ID])
+	STOR = inputs["VS_STOR"]
+
+	# Storage DC Discharge Resources
+	inputs["VS_STOR_DC_DISCHARGE"] = df[(df.STOR_DC_DISCHARGE.>=1),:R_ID]
+	inputs["VS_SYM_DC_DISCHARGE"] = df[df.STOR_DC_DISCHARGE.==1,:R_ID]
+	inputs["VS_ASYM_DC_DISCHARGE"] = df[df.STOR_DC_DISCHARGE.==2,:R_ID]
+
+	# Storage DC Charge Resources
+	inputs["VS_STOR_DC_CHARGE"] = df[(df.STOR_DC_CHARGE.>=1),:R_ID]
+	inputs["VS_SYM_DC_CHARGE"] = df[df.STOR_DC_CHARGE.==1,:R_ID]
+    inputs["VS_ASYM_DC_CHARGE"] = df[df.STOR_DC_CHARGE.==2,:R_ID]
+
+	# Storage AC Discharge Resources
+	inputs["VS_STOR_AC_DISCHARGE"] = df[(df.STOR_AC_DISCHARGE.>=1),:R_ID]
+	inputs["VS_SYM_AC_DISCHARGE"] = df[df.STOR_AC_DISCHARGE.==1,:R_ID]
+	inputs["VS_ASYM_AC_DISCHARGE"] = df[df.STOR_AC_DISCHARGE.==2,:R_ID]
+
+	# Storage AC Charge Resources
+	inputs["VS_STOR_AC_CHARGE"] = df[(df.STOR_AC_CHARGE.>=1),:R_ID]
+	inputs["VS_SYM_AC_CHARGE"] = df[df.STOR_AC_CHARGE.==1,:R_ID]
+	inputs["VS_ASYM_AC_CHARGE"] = df[df.STOR_AC_CHARGE.==2,:R_ID]
+
+	# Storage LDS & Non-LDS Resources
+	if setup["OperationWrapping"] == 1
+		inputs["VS_LDS"] = df[(df.LDS.!=0),:R_ID]
+		inputs["VS_nonLDS"] = setdiff(STOR, inputs["VS_LDS"])
+	else
+		inputs["VS_LDS"] = Int[]
+		inputs["VS_nonLDS"] = VRE_STOR
+	end
+
+    # Symmetric and asymmetric storage resources
+	inputs["VS_ASYM"] = union(inputs["VS_ASYM_DC_CHARGE"], inputs["VS_ASYM_DC_DISCHARGE"], 
+		inputs["VS_ASYM_AC_DISCHARGE"], inputs["VS_ASYM_AC_CHARGE"])
+	inputs["VS_SYM_DC"] = intersect(inputs["VS_SYM_DC_CHARGE"], inputs["VS_SYM_DC_DISCHARGE"])
+    inputs["VS_SYM_AC"] = intersect(inputs["VS_SYM_AC_CHARGE"], inputs["VS_SYM_AC_DISCHARGE"])
+
+    # Send warnings for symmetric/asymmetric resources
+    if (!isempty(setdiff(inputs["VS_SYM_DC_DISCHARGE"], inputs["VS_SYM_DC_CHARGE"])) 
+		|| !isempty(setdiff(inputs["VS_SYM_DC_CHARGE"], inputs["VS_SYM_DC_DISCHARGE"])) 
+		|| !isempty(setdiff(inputs["VS_SYM_AC_DISCHARGE"], inputs["VS_SYM_AC_CHARGE"])) 
+		|| !isempty(setdiff(inputs["VS_SYM_AC_CHARGE"], inputs["VS_SYM_AC_DISCHARGE"])))
+        @warn("Symmetric capacities must both be DC or AC.")
+    end
+
+	# Send warnings for battery resources discharging
+	if !isempty(intersect(inputs["VS_STOR_DC_DISCHARGE"], inputs["VS_STOR_AC_DISCHARGE"]))
+		@warn("Both AC and DC discharging functionalities are turned on.")
+	end
+
+	# Send warnings for battery resources charging
+	if !isempty(intersect(inputs["VS_STOR_DC_CHARGE"], inputs["VS_STOR_AC_CHARGE"]))
+		@warn("Both AC and DC charging functionalities are turned on.")
+	end
+end
+
+@doc raw"""
+	load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict, gen_in::DataFrame)
+
+Function for reading input parameters related to co-located VRE-storage resources
+"""
+function load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict, gen_in::DataFrame)
+	
+	error_strings = String[]
 	dfGen = inputs_gen["dfGen"]
 	inputs_gen["VRE_STOR"] = "VRE_STOR" in names(gen_in) ? gen_in[gen_in.VRE_STOR.==1,:R_ID] : Int[]
-	inputs_gen["VS_STOR"] = []
 
 	# Check if VRE-STOR resources exist
 	if !isempty(inputs_gen["VRE_STOR"])
+
 		# Check input data format
 		vre_stor_errors = check_vre_stor_validity(gen_in)
 		append!(error_strings, vre_stor_errors)
 
-		vre_stor_in = DataFrame(CSV.File(joinpath(path,"Vre_and_storage_data.csv"), header=true), copycols=true)
+		vre_stor_in = DataFrame(CSV.File(joinpath(path,"Vre_and_stor_data.csv"), header=true), copycols=true)
 
-		## DEFINIING ALL SETS
+		## Defining all sets
 
 		# Solar PV Resources
 		inputs_gen["VS_SOLAR"] = vre_stor_in[(vre_stor_in.SOLAR.!=0),:R_ID]
@@ -334,23 +408,8 @@ function load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict
 		# Wind Resources
 		inputs_gen["VS_WIND"] = vre_stor_in[(vre_stor_in.WIND.!=0),:R_ID]
 
-		# All Storage Resources
-		inputs_gen["VS_STOR"] = union(vre_stor_in[vre_stor_in.STOR_DC_CHARGE.>=1,:R_ID], vre_stor_in[vre_stor_in.STOR_AC_CHARGE.>=1,:R_ID], vre_stor_in[vre_stor_in.STOR_DC_DISCHARGE.>=1,:R_ID], vre_stor_in[vre_stor_in.STOR_AC_DISCHARGE.>=1,:R_ID])
-
-		# Storage DC Discharge Resources
-		inputs_gen["VS_STOR_DC_DISCHARGE"] = vre_stor_in[(vre_stor_in.STOR_DC_DISCHARGE.>=1),:R_ID]
-
-		# Storage DC Charge Resources
-		inputs_gen["VS_STOR_DC_CHARGE"] = vre_stor_in[(vre_stor_in.STOR_DC_CHARGE.>=1),:R_ID]
-
-		# Storage AC Discharge Resources
-		inputs_gen["VS_STOR_AC_DISCHARGE"] = vre_stor_in[(vre_stor_in.STOR_AC_DISCHARGE.>=1),:R_ID]
-
-		# Storage AC Charge Resources
-		inputs_gen["VS_STOR_AC_CHARGE"] = vre_stor_in[(vre_stor_in.STOR_AC_CHARGE.>=1),:R_ID]
-
-		# Storage LDS Resources
-		inputs_gen["VS_LDS"] = vre_stor_in[(vre_stor_in.LDS.!=0),:R_ID]
+		# Storage Resources
+		split_storage_resources!(vre_stor_in, inputs_gen, setup)
 
 		# Set of all VRE-STOR resources eligible for new solar capacity
 		inputs_gen["NEW_CAP_SOLAR"] = intersect(dfGen[dfGen.New_Build.==1,:R_ID], vre_stor_in[vre_stor_in.SOLAR.!=0,:R_ID], vre_stor_in[vre_stor_in.Max_Cap_Solar_MW.!=0,:R_ID])
@@ -368,22 +427,28 @@ function load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict
 		inputs_gen["NEW_CAP_STOR"] = intersect(dfGen[dfGen.New_Build.==1,:R_ID], dfGen[dfGen.Max_Cap_MWh.!=0,:R_ID], inputs_gen["VS_STOR"])
 		# Set of all storage resources eligible for energy capacity retirements
 		inputs_gen["RET_CAP_STOR"] = intersect(dfGen[dfGen.New_Build.!=-1,:R_ID], dfGen[dfGen.Existing_Cap_MWh.>=0,:R_ID], inputs_gen["VS_STOR"])
-		
-		# Send warnings for battery resources discharging
-		if !isempty(intersect(inputs_gen["VS_STOR_DC_DISCHARGE"], inputs_gen["VS_STOR_AC_DISCHARGE"]))
-			@warn("Both AC and DC discharging functionalities are turned on.")
-		end
-
-		# Send warnings for battery resources charging
-		if !isempty(intersect(inputs_gen["VS_STOR_DC_CHARGE"], inputs_gen["VS_STOR_AC_CHARGE"]))
-			@warn("Both AC and DC charging functionalities are turned on.")
-		end
-
-		# Send warnings for policy flags (all should be off)
+		if !isempty(inputs_gen["VS_ASYM"])
+			# Set of asymmetric charge DC storage resources eligible for new charge capacity
+			inputs_gen["NEW_CAP_CHARGE_DC"] = intersect(dfGen[dfGen.New_Build.==1,:R_ID], vre_stor_in[vre_stor_in.Max_Cap_Charge_DC_MW.!=0,:R_ID], inputs_gen["VS_ASYM_DC_CHARGE"]) 
+			# Set of asymmetric charge DC storage resources eligible for charge capacity retirements
+			inputs_gen["RET_CAP_CHARGE_DC"] = intersect(dfGen[dfGen.New_Build.!=-1,:R_ID], vre_stor_in[vre_stor_in.Existing_Cap_Charge_DC_MW.>=0,:R_ID], inputs_gen["VS_ASYM_DC_CHARGE"])
+			# Set of asymmetric discharge DC storage resources eligible for new discharge capacity
+			inputs_gen["NEW_CAP_DISCHARGE_DC"] = intersect(dfGen[dfGen.New_Build.==1,:R_ID], vre_stor_in[vre_stor_in.Max_Cap_Discharge_DC_MW.!=0,:R_ID], inputs_gen["VS_ASYM_DC_DISCHARGE"]) 
+			# Set of asymmetric discharge DC storage resources eligible for discharge capacity retirements
+			inputs_gen["RET_CAP_DISCHARGE_DC"] = intersect(dfGen[dfGen.New_Build.!=-1,:R_ID], vre_stor_in[vre_stor_in.Existing_Cap_Discharge_DC_MW.>=0,:R_ID], inputs_gen["VS_ASYM_DC_DISCHARGE"]) 
+			# Set of asymmetric charge AC storage resources eligible for new charge capacity
+			inputs_gen["NEW_CAP_CHARGE_AC"] = intersect(dfGen[dfGen.New_Build.==1,:R_ID], vre_stor_in[vre_stor_in.Max_Cap_Charge_AC_MW.!=0,:R_ID], inputs_gen["VS_ASYM_AC_CHARGE"]) 
+			# Set of asymmetric charge AC storage resources eligible for charge capacity retirements
+			inputs_gen["RET_CAP_CHARGE_AC"] = intersect(dfGen[dfGen.New_Build.!=-1,:R_ID], vre_stor_in[vre_stor_in.Existing_Cap_Charge_AC_MW.>=0,:R_ID], inputs_gen["VS_ASYM_AC_CHARGE"]) 
+			# Set of asymmetric discharge AC storage resources eligible for new discharge capacity
+			inputs_gen["NEW_CAP_DISCHARGE_AC"] = intersect(dfGen[dfGen.New_Build.==1,:R_ID], vre_stor_in[vre_stor_in.Max_Cap_Discharge_AC_MW.!=0,:R_ID], inputs_gen["VS_ASYM_AC_DISCHARGE"]) 
+			# Set of asymmetric discharge AC storage resources eligible for discharge capacity retirements
+			inputs_gen["RET_CAP_DISCHARGE_AC"] = intersect(dfGen[dfGen.New_Build.!=-1,:R_ID], vre_stor_in[vre_stor_in.Existing_Cap_Discharge_AC_MW.>=0,:R_ID], inputs_gen["VS_ASYM_AC_DISCHARGE"]) 
+		end 
 
 		# Names for systemwide resources
 		inputs_gen["RESOURCES_VRE_STOR"] = collect(skipmissing(vre_stor_in[!,:Resource][1:size(inputs_gen["VRE_STOR"])[1]]))
-		
+
 		# Scale the parameters as needed
 		if setup["ParameterScale"] == 1
 			columns_to_scale = [:Existing_Cap_Inverter_MW,
@@ -428,9 +493,21 @@ function load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict
 								:Var_OM_Cost_per_MWh_Charge_AC,
 								:Var_OM_Cost_per_MWh_Discharge_AC]
 			vre_stor_in[!, columns_to_scale] ./= ModelScalingFactor
+
+			# Scale for multistage feature 
+			if setup["MultiStage"] == 1
+				columns_to_scale_multistage = [:Min_Retired_Cap_Inverter_MW,
+											   :Min_Retired_Cap_Solar_MW,
+											   :Min_Retired_Cap_Wind_MW,
+											   :Min_Retired_Cap_Charge_DC_MW,
+											   :Min_Retired_Cap_Charge_AC_MW,
+											   :Min_Retired_Cap_Discharge_DC_MW,
+											   :Min_Retired_Cap_Discharge_AC_MW]
+				vre_stor_in[!, columns_to_scale_multistage] ./= ModelScalingFactor
+			end
 		end
 		inputs_gen["dfVRE_STOR"] = vre_stor_in
-		println("Vre_and_storage_data.csv Successfully Read!")
+		println("Vre_and_stor_data.csv Successfully Read!")
 	else
 		inputs_gen["dfVRE_STOR"] = DataFrame()
 	end

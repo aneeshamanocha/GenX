@@ -32,7 +32,10 @@ function write_net_revenue(path::AbstractString, inputs::Dict, setup::Dict, EP::
 		SOLAR = inputs["VS_SOLAR"]
 		WIND = inputs["VS_WIND"]
 		DC = inputs["VS_DC"]
-		STOR = inputs["VS_STOR"]
+		DC_DISCHARGE = inputs["VS_STOR_DC_DISCHARGE"]
+		AC_DISCHARGE = inputs["VS_STOR_AC_DISCHARGE"]
+		DC_CHARGE = inputs["VS_STOR_DC_CHARGE"]
+		AC_CHARGE = inputs["VS_STOR_AC_CHARGE"]
 		# Should read in charge asymmetric capacities
 	end
 
@@ -75,6 +78,12 @@ function write_net_revenue(path::AbstractString, inputs::Dict, setup::Dict, EP::
 		if !isempty(DC)
 			dfNetRevenue.Fixed_OM_cost_MW[DC] += dfVRE_STOR[((dfVRE_STOR.SOLAR.!=0) .| (dfVRE_STOR.STOR_DC_DISCHARGE.>=1) .| (dfVRE_STOR.STOR_DC_CHARGE.>=1)),:Fixed_OM_Inverter_Cost_per_MWyr] .* value.(EP[:eTotalCap_DC]).data
 		end	
+		if !isempty(DC_DISCHARGE)
+			dfNetRevenue.Var_OM_cost_out[DC_DISCHARGE] += dfVRE_STOR[(dfVRE_STOR.STOR_DC_DISCHARGE.!=0),:Var_OM_Cost_per_MWh_Discharge_DC] .* (value.(EP[:vP_DC_DISCHARGE][DC_DISCHARGE, :]).data .* dfVRE_STOR[(dfVRE_STOR.STOR_DC_DISCHARGE.!=0),:EtaInverter] * inputs["omega"])
+		end
+		if !isempty(AC_DISCHARGE)
+			dfNetRevenue.Var_OM_cost_out[AC_DISCHARGE] += dfVRE_STOR[(dfVRE_STOR.STOR_AC_DISCHARGE.!=0),:Var_OM_Cost_per_MWh_Discharge_AC] .* (value.(EP[:vP_AC_DISCHARGE][AC_DISCHARGE, :]).data * inputs["omega"])
+		end
 	end
 	if setup["ParameterScale"] == 1
 		dfNetRevenue.Fixed_OM_cost_MW *= ModelScalingFactor # converting Million US$ to US$
@@ -93,7 +102,15 @@ function write_net_revenue(path::AbstractString, inputs::Dict, setup::Dict, EP::
 	if !isempty(STOR_ALL)
 		dfNetRevenue.Var_OM_cost_in[STOR_ALL] = dfGen[STOR_ALL,:Var_OM_Cost_per_MWh_In] .* ((value.(EP[:vCHARGE][STOR_ALL,:]).data) * inputs["omega"])
  	end
-	# need to add for storage VRE-storage resources
+	if !isempty(VRE_STOR)
+		if !isempty(DC_CHARGE)
+			dfNetRevenue.Var_OM_cost_in[DC_CHARGE] += dfVRE_STOR[(dfVRE_STOR.STOR_DC_CHARGE.!=0),:Var_OM_Cost_per_MWh_Charge_DC] .* (value.(EP[:vP_DC_CHARGE][DC_CHARGE, :]).data ./ dfVRE_STOR[(dfVRE_STOR.STOR_DC_CHARGE.!=0),:EtaInverter] * inputs["omega"])
+		end
+		if !isempty(AC_CHARGE)
+			dfNetRevenue.Var_OM_cost_in[AC_CHARGE] += dfVRE_STOR[(dfVRE_STOR.STOR_AC_CHARGE.!=0),:Var_OM_Cost_per_MWh_Charge_AC] .* (value.(EP[:vP_AC_CHARGE][AC_CHARGE, :]).data * inputs["omega"])
+		end
+	end
+
 	if setup["ParameterScale"] == 1
 		dfNetRevenue.Var_OM_cost_in *= ModelScalingFactor^2 # converting Million US$ to US$
 	end

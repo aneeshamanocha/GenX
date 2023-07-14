@@ -40,6 +40,13 @@ function write_capacity_value(path::AbstractString, inputs::Dict, setup::Dict, E
 	MUST_RUN_EX = intersect(MUST_RUN, existingplant_position)
 	# Will only be activated if grid connection capacity exists (because may build standalone storage/VRE, which will only be telling by grid connection capacity)
 	VRE_STOR_EX = intersect(VRE_STOR, existingplant_position)
+	if !isempty(VRE_STOR_EX)
+		VRE_STOR_STOR_EX = intersect(inputs["VS_STOR"], VRE_STOR_EX)
+		DC_DISCHARGE_EX = intersect(inputs["VS_STOR_DC_DISCHARGE"], VRE_STOR_EX)
+		AC_DISCHARGE_EX = intersect(inputs["VS_STOR_AC_DISCHARGE"], VRE_STOR_EX)
+		DC_CHARGE_EX = intersect(inputs["VS_STOR_DC_CHARGE"], VRE_STOR_EX)
+		AC_CHARGE_EX = intersect(inputs["VS_STOR_AC_CHARGE"], VRE_STOR_EX)
+	end
 	
 	totalcap = repeat((value.(EP[:eTotalCap])), 1, T)
 	dfCapValue = DataFrame()
@@ -66,8 +73,13 @@ function write_capacity_value(path::AbstractString, inputs::Dict, setup::Dict, E
 		if !isempty(FLEX_EX)
 			temp_capvalue[FLEX_EX, :] = temp_cap_derate[FLEX_EX, :] .* ((value.(EP[:vCHARGE_FLEX][FLEX_EX, :]).data - value.(EP[:vP][FLEX_EX, :]))) .* temp_riskyhour[FLEX_EX, :] ./ totalcap[FLEX_EX, :]
 		end
-		if !isempty(VRE_STOR)
-			temp_capvalue[VRE_STOR_EX, :] = temp_cap_derate[VRE_STOR_EX, :] .* ((value.(EP[:vP][VRE_STOR_EX, :]) - value.(EP[:vCHARGE_VRE_STOR][VRE_STOR_EX, :]).data + value.(EP[:vCAPCONTRSTOR_VP_VRE_STOR][VRE_STOR_EX, :]).data - value.(EP[:vCAPCONTRSTOR_VCHARGE_VRE_STOR][VRE_STOR_EX, :]).data)) .* temp_riskyhour[VRE_STOR_EX, :] ./ totalcap[VRE_STOR_EX, :]
+		if !isempty(VRE_STOR_EX)
+			temp_capvalue[VRE_STOR_EX, :] = temp_cap_derate[VRE_STOR_EX, :] .* (value.(EP[:vP][VRE_STOR_EX, :])) .* temp_riskyhour[VRE_STOR_EX, :] ./ totalcap[VRE_STOR_EX, :]
+			temp_capvalue[VRE_STOR_STOR_EX, :] .-= temp_cap_derate[VRE_STOR_STOR_EX, :] .* (value.(EP[:vCHARGE_VRE_STOR][VRE_STOR_STOR_EX, :])) .* temp_riskyhour[VRE_STOR_STOR_EX, :] ./ totalcap[VRE_STOR_STOR_EX, :]
+			temp_capvalue[DC_DISCHARGE_EX, :] .+= temp_cap_derate[DC_DISCHARGE_EX, :] .* ((value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE_EX, :]) .* dfVRE_STOR[DC_DISCHARGE_EX, :EtaInverter])) .* temp_riskyhour[DC_DISCHARGE_EX, :] ./ totalcap[DC_DISCHARGE_EX, :]
+			temp_capvalue[AC_DISCHARGE_EX, :] .+= temp_cap_derate[AC_DISCHARGE_EX, :] .* ((value.(EP[:vCAPRES_AC_DISCHARGE][AC_DISCHARGE_EX, :]))) .* temp_riskyhour[AC_DISCHARGE_EX, :] ./ totalcap[AC_DISCHARGE_EX, :]
+			temp_capvalue[DC_CHARGE_EX, :] .-= temp_cap_derate[DC_CHARGE_EX, :] .* ((value.(EP[:vCAPRES_DC_CHARGE][DC_CHARGE_EX, :]) ./ dfVRE_STOR[DC_CHARGE_EX, :EtaInverter])) .* temp_riskyhour[DC_CHARGE_EX, :] ./ totalcap[DC_CHARGE_EX, :]
+			temp_capvalue[AC_CHARGE_EX, :] .-= temp_cap_derate[AC_CHARGE_EX, :] .* ((value.(EP[:vCAPRES_AC_CHARGE][AC_CHARGE_EX, :]))) .* temp_riskyhour[AC_CHARGE_EX, :] ./ totalcap[AC_CHARGE_EX, :]
 		end
 		temp_dfCapValue = hcat(temp_dfCapValue, DataFrame(temp_capvalue, :auto))
 		auxNew_Names = [Symbol("Resource"); Symbol("Zone"); Symbol("Reserve"); [Symbol("t$t") for t in 1:T]]
