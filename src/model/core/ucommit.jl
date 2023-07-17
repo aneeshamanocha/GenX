@@ -15,7 +15,7 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 @doc raw"""
-	ucommit(EP::Model, inputs::Dict, UCommit::Int)
+	ucommit(EP::Model, inputs::Dict, setup::Dict)
 
 This function creates decision variables and cost expressions associated with thermal plant unit commitment or start-up and shut-down decisions (cycling on/off)
 
@@ -32,13 +32,13 @@ $\zeta_{y,t,z}$ represents number of shutdown decisions in cluster $y$ in zone $
 The total cost of start-ups across all generators subject to unit commitment ($y \in UC$) and all time periods, t is expressed as:
 ```math
 \begin{aligned}
-	C^{start} = \sum_{y \in UC, t \in T} \omega_t \times start\_cost_{y} \times \chi_{y,t}
+	C^{start} = \sum_{y \in UC, t \in T} \omega_t \times start\_cost_{y,t} \times \chi_{y,t}
 \end{aligned}
 ```
 
 The sum of start-up costs is added to the objective function.
 """
-function ucommit(EP::Model, inputs::Dict, UCommit::Int)
+function ucommit!(EP::Model, inputs::Dict, setup::Dict)
 
 	println("Unit Commitment Module")
 
@@ -64,7 +64,7 @@ function ucommit(EP::Model, inputs::Dict, UCommit::Int)
 	## Objective Function Expressions ##
 
 	# Startup costs of "generation" for resource "y" during hour "t"
-	@expression(EP, eCStart[y in COMMIT, t=1:T],(inputs["omega"][t]*inputs["C_Start"][y]*vSTART[y,t]))
+	@expression(EP, eCStart[y in COMMIT, t=1:T],(inputs["omega"][t]*inputs["C_Start"][y,t]*vSTART[y,t]))
 
 	# Julia is fastest when summing over one row one column at a time
 	@expression(EP, eTotalCStartT[t=1:T], sum(eCStart[y,t] for y in COMMIT))
@@ -74,7 +74,7 @@ function ucommit(EP::Model, inputs::Dict, UCommit::Int)
 
 	### Constratints ###
 	## Declaration of integer/binary variables
-	if UCommit == 1 # Integer UC constraints
+	if setup["UCommit"] == 1 # Integer UC constraints
 		for y in COMMIT
 			set_integer.(vCOMMIT[y,:])
 			set_integer.(vSTART[y,:])

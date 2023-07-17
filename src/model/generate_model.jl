@@ -77,7 +77,7 @@ The power balance constraint of the model ensures that electricity demand is met
 
 """
 
-## generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes,modeloutput = nothing)
+## generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes)
 ################################################################################
 ##
 ## description: Sets up and solves constrained optimization model of electricity
@@ -87,7 +87,7 @@ The power balance constraint of the model ensures that electricity demand is met
 ## returns: Model EP object containing the entire optimization problem model to be solved by SolveModel.jl
 ##
 ################################################################################
-function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes,modeloutput = nothing)
+function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes)
 
 	T = inputs["T"]     # Number of time steps (hours)
 	Z = inputs["Z"]     # Number of zones
@@ -97,7 +97,7 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 
 	# Generate Energy Portfolio (EP) Model
 	EP = Model(OPTIMIZER)
-
+	set_string_names_on_creation(EP, Bool(setup["EnableJuMPStringNames"]))
 	# Introduce dummy variable fixed to zero to ensure that expressions like eTotalCap,
 	# eTotalCapCharge, eTotalCapEnergy and eAvail_Trans_Cap all have a JuMP variable
 	@variable(EP, vZERO == 0);
@@ -126,92 +126,95 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 		@expression(EP, eMinCapRes[mincap = 1:inputs["NumberOfMinCapReqs"]], 0)
 	end
 
-	#@expression(EP, :eCO2Cap[cap=1:inputs["NCO2Cap"]], 0)
-	#@expression(EP, eGenerationByZone[z=1:Z, t=1:T], 0) ##From main
-
 	# Infrastructure
-	EP = discharge(EP, inputs, setup["EnergyShareRequirement"])
+	discharge!(EP, inputs, setup)
 
-	EP = non_served_energy(EP, inputs, setup["CapacityReserveMargin"])
+	non_served_energy!(EP, inputs, setup)
 
-	EP = investment_discharge(EP, inputs, setup["MinCapReq"], setup["MultiStage"])
+	investment_discharge!(EP, inputs, setup)
 
 	if setup["UCommit"] > 0
-		EP = ucommit(EP, inputs, setup["UCommit"])
+		ucommit!(EP, inputs, setup)
 	end
 
-	EP = emissions(EP, inputs)
+	emissions!(EP, inputs)
 
 	if setup["Reserves"] > 0
-		EP = reserves(EP, inputs, setup["UCommit"])
+		reserves!(EP, inputs, setup)
 	end
 
 	if Z > 1
-		EP = transmission(EP, inputs, setup["UCommit"], setup["NetworkExpansion"], setup["CapacityReserveMargin"], setup["MultiStage"])
+		transmission!(EP, inputs, setup)
 	end
 
 	# Technologies
 	# Model constraints, variables, expression related to dispatchable renewable resources
 
 	if !isempty(inputs["VRE"])
-		EP = curtailable_variable_renewable(EP, inputs, setup["Reserves"], setup["CapacityReserveMargin"])
+		curtailable_variable_renewable!(EP, inputs, setup)
 	end
 
 	# Model constraints, variables, expression related to non-dispatchable renewable resources
 	if !isempty(inputs["MUST_RUN"])
-		EP = must_run(EP, inputs, setup["CapacityReserveMargin"])
+		must_run!(EP, inputs, setup)
 	end
 
 	# Model constraints, variables, expression related to energy storage modeling
 	if !isempty(inputs["STOR_ALL"])
-		EP = storage(EP, inputs, setup["Reserves"], setup["OperationWrapping"], setup["EnergyShareRequirement"], setup["CapacityReserveMargin"], setup["StorageLosses"], setup["MultiStage"])
+		storage!(EP, inputs, setup)
 	end
 
 	# Model constraints, variables, expression related to reservoir hydropower resources
 	if !isempty(inputs["HYDRO_RES"])
-		EP = hydro_res(EP, inputs, setup["Reserves"], setup["CapacityReserveMargin"])
+		hydro_res!(EP, inputs, setup)
 	end
 
 	# Model constraints, variables, expression related to reservoir hydropower resources with long duration storage
 	if setup["OperationWrapping"] == 1 && !isempty(inputs["STOR_HYDRO_LONG_DURATION"])
-		EP = hydro_inter_period_linkage(EP, inputs)
+		hydro_inter_period_linkage!(EP, inputs)
 	end
 
 	# Model constraints, variables, expression related to demand flexibility resources
 	if !isempty(inputs["FLEX"])
-		EP = flexible_demand(EP, inputs, setup["CapacityReserveMargin"])
+		flexible_demand!(EP, inputs, setup)
 	end
 	# Model constraints, variables, expression related to thermal resource technologies
 	if !isempty(inputs["THERM_ALL"])
-		EP = thermal(EP, inputs, setup["UCommit"], setup["Reserves"], setup["CapacityReserveMargin"])
+		thermal!(EP, inputs, setup)
+	end
+
+	# Model constraints, variables, expression related to retrofit technologies
+	if !isempty(inputs["RETRO"])
+		EP = retrofit(EP, inputs)
 	end
 
 	# Model constraints, variables, expressions related to the co-located VRE-storage resources
 	if !isempty(inputs["VRE_STOR"])
 		vre_stor!(EP, inputs, setup)
 	end
-
 	# Policies
 	# CO2 emissions limits
-	EP = co2_cap(EP, inputs, setup)
+	if setup["CO2Cap"] >= 1
+		co2_cap!(EP, inputs, setup)
+	end
 
 	# Endogenous Retirements
 	if setup["MultiStage"] > 0
-		EP = endogenous_retirement(EP, inputs, setup["MultiStageSettingsDict"])
+		endogenous_retirement!(EP, inputs, setup)
 	end
 
 	# Energy Share Requirement
 	if setup["EnergyShareRequirement"] >= 1
-		EP = energy_share_requirement(EP, inputs, setup)
+		energy_share_requirement!(EP, inputs, setup)
 	end
 
 	#Capacity Reserve Margin
 	if setup["CapacityReserveMargin"] > 0
-		EP = cap_reserve_margin(EP, inputs, setup)
+		cap_reserve_margin!(EP, inputs, setup)
 	end
 
 	if (setup["MinCapReq"] == 1)
-		EP = minimum_capacity_requirement(EP, inputs, setup)
+		minimum_capacity_requirement!(EP, inputs, setup)
 	end
 
 	## Define the objective function
@@ -224,15 +227,9 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 
 	## Record pre-solver time
 	presolver_time = time() - presolver_start_time
-    	#### Question - What do we do with this time now that we've split this function into 2?
 	if setup["PrintModel"] == 1
-		if modeloutput === nothing
-			filepath = joinpath(pwd(), "YourModel.lp")
-			JuMP.write_to_file(EP, filepath)
-		else
-			filepath = joinpath(modeloutput, "YourModel.lp")
-			JuMP.write_to_file(EP, filepath)
-		end
+		filepath = joinpath(pwd(), "YourModel.lp")
+		JuMP.write_to_file(EP, filepath)
 		println("Model Printed")
     	end
 

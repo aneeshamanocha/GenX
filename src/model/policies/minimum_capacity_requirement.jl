@@ -15,7 +15,7 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 @doc raw"""
-	minimum_capacity_requirement(EP::Model, inputs::Dict)
+	minimum_capacity_requirement!(EP::Model, inputs::Dict, setup::Dict)
 The minimum capacity requirement constraint allows for modeling minimum deployment of a certain technology or set of eligible technologies across the eligible model zones and can be used to mimic policies supporting specific technology build out (i.e. capacity deployment targets/mandates for storage, offshore wind, solar etc.). The default unit of the constraint is in MW. For each requirement $p \in \mathcal{P}^{MinCapReq}$, we model the policy with the following constraint.
 ```math
 \begin{aligned}
@@ -30,7 +30,7 @@ Also note that co-located VRE and storage resources, there are three different c
 	capacity of storage (power to energy ratio times the energy capacity) can all have minimum capacity 
 	requirements.
 """
-function minimum_capacity_requirement(EP::Model, inputs::Dict, setup::Dict)
+function minimum_capacity_requirement!(EP::Model, inputs::Dict, setup::Dict)
 
 	println("Minimum Capacity Requirement Module")
 	NumberOfMinCapReqs = inputs["NumberOfMinCapReqs"]
@@ -42,5 +42,14 @@ function minimum_capacity_requirement(EP::Model, inputs::Dict, setup::Dict)
 	
 	end
 
-	return EP
+	# if input files are present, add minimum capacity requirement slack variables
+	if haskey(inputs, "MinCapPriceCap")
+		@variable(EP, vMinCap_slack[mincap = 1:NumberOfMinCapReqs]>=0)
+		EP[:eMinCapRes] += vMinCap_slack
+
+		@expression(EP, eCMinCap_slack[mincap = 1:NumberOfMinCapReqs], inputs["MinCapPriceCap"][mincap] * EP[:vMinCap_slack][mincap])
+		@expression(EP, eTotalCMinCapSlack, sum(EP[:eCMinCap_slack][mincap] for mincap = 1:NumberOfMinCapReqs))
+		
+		EP[:eObj] += eTotalCMinCapSlack
+	end
 end

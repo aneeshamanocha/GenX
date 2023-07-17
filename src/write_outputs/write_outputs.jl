@@ -95,9 +95,11 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		elapsed_time_reliability = @elapsed write_reliability(path, inputs, setup, EP)
 		println("Time elapsed for writing reliability is")
 		println(elapsed_time_reliability)
-		elapsed_time_stordual = @elapsed write_storagedual(path, inputs, setup, EP)
-		println("Time elapsed for writing storage duals is")
-		println(elapsed_time_stordual)
+		if !isempty(inputs["STOR_ALL"])
+			elapsed_time_stordual = @elapsed write_storagedual(path, inputs, setup, EP)
+			println("Time elapsed for writing storage duals is")
+			println(elapsed_time_stordual)
+		end
 	end
 
 	if setup["UCommit"] >= 1
@@ -140,8 +142,8 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		dfRegSubRevenue = DataFrame()
 		if has_duals(EP) == 1
 			dfPrice = write_price(path, inputs, setup, EP)
-			dfEnergyRevenue = write_energy_revenue(path, sep, inputs, setup, EP)
-			dfChargingcost = write_charging_cost(path, sep, inputs, setup, EP)
+			dfEnergyRevenue = write_energy_revenue(path, inputs, setup, EP)
+			dfChargingcost = write_charging_cost(path, inputs, setup, EP)
 			dfSubRevenue, dfRegSubRevenue = write_subsidy_revenue(path, inputs, setup, EP)
 		end
 
@@ -162,11 +164,21 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 			dfVirtualDischarge = write_virtual_discharge(path, inputs, setup, EP)
 		  println("Time elapsed for writing reserve margin is")
 		  println(elapsed_time_rsv_margin)
-			dfResRevenue = write_reserve_margin_revenue(path, sep, inputs, setup, EP)
-			elapsed_time_cap_value = @elapsed write_capacity_value(path, sep, inputs, setup, EP)
+			dfResRevenue = write_reserve_margin_revenue(path, inputs, setup, EP)
+			elapsed_time_cap_value = @elapsed write_capacity_value(path, inputs, setup, EP)
 		  println("Time elapsed for writing capacity value is")
 		  println(elapsed_time_cap_value)
+			if haskey(inputs, "dfCapRes_slack")
+				dfResMar_slack = write_reserve_margin_slack(path, inputs, setup, EP)
+			end		  
 		end
+		if setup["CO2Cap"]>0 && has_duals(EP) == 1
+			dfCO2Cap = write_co2_cap(path, inputs, setup, EP)
+		end
+		if setup["MinCapReq"] == 1 && has_duals(EP) == 1
+			dfMinCapReq = write_minimum_capacity_requirement(path, inputs, setup, EP)
+		end
+
 
 		elapsed_time_net_rev = @elapsed write_net_revenue(path, inputs, setup, EP, dfCap, dfESRRev, dfResRevenue, dfChargingcost, dfPower, dfEnergyRevenue, dfSubRevenue, dfRegSubRevenue)
 	  	println("Time elapsed for writing net revenue is")

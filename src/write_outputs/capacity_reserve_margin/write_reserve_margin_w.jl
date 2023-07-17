@@ -16,6 +16,7 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 
 function write_reserve_margin_w(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 	T = inputs["T"]     # Number of time steps (hours)
+	p = inputs["hours_per_subperiod"]
 	#dfResMar dataframe with weights included for calculations
 	dfResMar_w = DataFrame(Constraint = [Symbol("t$t") for t in 1:T])
 	temp_ResMar_w = transpose(dual.(EP[:cCapacityResMargin]))./inputs["omega"]
