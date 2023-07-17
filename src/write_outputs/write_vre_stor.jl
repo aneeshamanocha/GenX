@@ -283,7 +283,7 @@ function write_vre_stor_charge(path::AbstractString, inputs::Dict, setup::Dict, 
 
 	# DC charging of battery dataframe
 	if !isempty(DC_CHARGE)
-		dfCharge_DC = DataFrame(Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(DC_CHARGE)[1]))
+		dfCharge_DC = DataFrame(Resource = inputs["RESOURCES_DC_CHARGE"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(DC_CHARGE)[1]))
 		charge_dc = zeros(size(DC_CHARGE)[1], T)
 		charge_dc = value.(EP[:vP_DC_CHARGE]).data * (setup["ParameterScale"]==1 ? ModelScalingFactor : 1)
 		dfCharge_DC.AnnualSum .= charge_dc * inputs["omega"]
@@ -299,7 +299,7 @@ function write_vre_stor_charge(path::AbstractString, inputs::Dict, setup::Dict, 
 
 	# AC charging of battery dataframe
 	if !isempty(AC_CHARGE)
-		dfCharge_AC = DataFrame(Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(AC_CHARGE)[1]))
+		dfCharge_AC = DataFrame(Resource = inputs["RESOURCES_AC_CHARGE"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(AC_CHARGE)[1]))
 		charge_ac = zeros(size(AC_CHARGE)[1], T)
 		charge_ac = value.(EP[:vP_AC_CHARGE]).data * (setup["ParameterScale"]==1 ? ModelScalingFactor : 1)
 		dfCharge_AC.AnnualSum .= charge_ac * inputs["omega"]
@@ -329,7 +329,7 @@ function write_vre_stor_discharge(path::AbstractString, inputs::Dict, setup::Dic
 
 	# DC discharging of battery dataframe
 	if !isempty(DC_DISCHARGE)
-		dfDischarge_DC = DataFrame(Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(DC_DISCHARGE)[1]))
+		dfDischarge_DC = DataFrame(Resource = inputs["RESOURCES_DC_DISCHARGE"], Zone = inputs["ZONES_DC_DISCHARGE"], AnnualSum = Array{Union{Missing,Float32}}(undef, size(DC_DISCHARGE)[1]))
 		power_vre_stor = value.(EP[:vP_DC_DISCHARGE]).data
 		if setup["ParameterScale"] == 1
 			power_vre_stor *= ModelScalingFactor
@@ -347,7 +347,7 @@ function write_vre_stor_discharge(path::AbstractString, inputs::Dict, setup::Dic
 
 	# AC discharging of battery dataframe
 	if !isempty(AC_DISCHARGE)
-		dfDischarge_AC = DataFrame(Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(AC_DISCHARGE)[1]))
+		dfDischarge_AC = DataFrame(Resource = inputs["RESOURCES_AC_DISCHARGE"], Zone = inputs["ZONES_AC_DISCHARGE"], AnnualSum = Array{Union{Missing,Float32}}(undef, size(AC_DISCHARGE)[1]))
 		power_vre_stor = value.(EP[:vP_AC_DISCHARGE]).data
 		if setup["ParameterScale"] == 1
 			power_vre_stor *= ModelScalingFactor
@@ -365,7 +365,7 @@ function write_vre_stor_discharge(path::AbstractString, inputs::Dict, setup::Dic
 
 	# Wind generation of co-located resource dataframe
 	if !isempty(WIND)
-		dfVP_VRE_STOR = DataFrame(Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(WIND)[1]))
+		dfVP_VRE_STOR = DataFrame(Resource = inputs["RESOURCES_WIND"], Zone = inputs["ZONES_WIND"], AnnualSum = Array{Union{Missing,Float32}}(undef, size(WIND)[1]))
 		vre_vre_stor = value.(EP[:vP_WIND]).data 
 		if setup["ParameterScale"] == 1
 			vre_vre_stor *= ModelScalingFactor
@@ -383,8 +383,8 @@ function write_vre_stor_discharge(path::AbstractString, inputs::Dict, setup::Dic
 
 	# Solar generation of co-located resource dataframe
 	if !isempty(SOLAR)
-		dfVP_VRE_STOR = DataFrame(Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], AnnualSum = Array{Union{Missing,Float32}}(undef, size(SOLAR)[1]))
-		vre_vre_stor = value.(EP[:vP_SOLAR]).data .* dfVRE_STOR[!,:EtaInverter]
+		dfVP_VRE_STOR = DataFrame(Resource = inputs["RESOURCES_SOLAR"], Zone = inputs["ZONES_SOLAR"], AnnualSum = Array{Union{Missing,Float32}}(undef, size(SOLAR)[1]))
+		vre_vre_stor = value.(EP[:vP_SOLAR]).data .* dfVRE_STOR[(dfVRE_STOR.SOLAR.!=0), :EtaInverter]
 		if setup["ParameterScale"] == 1
 			vre_vre_stor *= ModelScalingFactor
 		end

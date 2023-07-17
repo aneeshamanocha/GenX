@@ -53,13 +53,13 @@ function write_storagedual(path::AbstractString, inputs::Dict, setup::Dict, EP::
 		end
 	end
 	if !isempty(VRE_STOR)
-		dual_values[VS_STOR, INTERIOR_SUBPERIODS] = (dual.(EP[:cSoCBalInterior_VRE_STOR][INTERIOR_SUBPERIODS, VS_STOR]).data ./ inputs["omega"][INTERIOR_SUBPERIODS])'
-		dual_values[VS_NONLDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart_VRE_STOR][START_SUBPERIODS, VS_NONLDS]).data ./ inputs["omega"][START_SUBPERIODS])'
+		dual_values[VS_STOR, INTERIOR_SUBPERIODS] = ((dual.(EP[:cSoCBalInterior_VRE_STOR][VS_STOR, INTERIOR_SUBPERIODS]).data)' ./ inputs["omega"][INTERIOR_SUBPERIODS])'
+		dual_values[VS_NONLDS, START_SUBPERIODS] = ((dual.(EP[:cSoCBalStart_VRE_STOR][VS_NONLDS, START_SUBPERIODS]).data)' ./ inputs["omega"][START_SUBPERIODS])'
 		if !isempty(VS_LDS)
 			if setup["OperationWrapping"] == 1
-				dual_values[VS_LDS, START_SUBPERIODS] = (dual.(EP[:cVreStorSoCBalLongDurationStorageStart][1:REP_PERIOD, VS_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
+				dual_values[VS_LDS, START_SUBPERIODS] = ((dual.(EP[:cVreStorSoCBalLongDurationStorageStart][VS_LDS, 1:REP_PERIOD]).data)' ./ inputs["omega"][START_SUBPERIODS])'
 			else
-				dual_values[VS_LDS, START_SUBPERIODS] = (dual.(EP[:cSoCBalStart_VRE_STOR][START_SUBPERIODS, VS_LDS]).data ./ inputs["omega"][START_SUBPERIODS])'
+				dual_values[VS_LDS, START_SUBPERIODS] = ((dual.(EP[:cSoCBalStart_VRE_STOR][VS_LDS, START_SUBPERIODS]).data)' ./ inputs["omega"][START_SUBPERIODS])'
 			end
 		end
 	end

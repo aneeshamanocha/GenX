@@ -25,7 +25,8 @@ function write_charge(path::AbstractString, inputs::Dict, setup::Dict, EP::Model
 	T = inputs["T"]     # Number of time steps (hours)
 	STOR_ALL = inputs["STOR_ALL"]
 	FLEX = inputs["FLEX"]
-	if !isempty(inputs["VRE_STOR"])
+	VRE_STOR = inputs["VRE_STOR"]
+	if !isempty(VRE_STOR)
 		VS_STOR = inputs["VS_STOR"]
 	end
 	# Power withdrawn to charge each resource in each time step

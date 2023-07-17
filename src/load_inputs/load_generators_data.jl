@@ -285,7 +285,6 @@ function check_vre_stor_validity(df::DataFrame)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :VRE)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :MUST_RUN)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :LDS)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :LDS)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :Var_OM_Cost_per_MWh)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :Var_OM_Cost_per_MWh_In)
 
@@ -345,7 +344,7 @@ function split_storage_resources!(df::DataFrame, inputs::Dict, setup::Dict)
 
 	# Storage LDS & Non-LDS Resources
 	if setup["OperationWrapping"] == 1
-		inputs["VS_LDS"] = df[(df.LDS.!=0),:R_ID]
+		inputs["VS_LDS"] = df[(df.LDS_VRE_STOR.!=0),:R_ID]
 		inputs["VS_nonLDS"] = setdiff(STOR, inputs["VS_LDS"])
 	else
 		inputs["VS_LDS"] = Int[]
@@ -448,6 +447,20 @@ function load_vre_stor_data!(setup::Dict, path::AbstractString, inputs_gen::Dict
 
 		# Names for systemwide resources
 		inputs_gen["RESOURCES_VRE_STOR"] = collect(skipmissing(vre_stor_in[!,:Resource][1:size(inputs_gen["VRE_STOR"])[1]]))
+
+		# Names for writing outputs
+		inputs_gen["RESOURCES_SOLAR"] = vre_stor_in[(vre_stor_in.SOLAR.!=0), :Resource]
+		inputs_gen["RESOURCES_WIND"] = vre_stor_in[(vre_stor_in.WIND.!=0), :Resource]
+		inputs_gen["RESOURCES_DC_DISCHARGE"] = vre_stor_in[(vre_stor_in.STOR_DC_DISCHARGE.!=0), :Resource]
+		inputs_gen["RESOURCES_AC_DISCHARGE"] = vre_stor_in[(vre_stor_in.STOR_AC_DISCHARGE.!=0), :Resource]
+		inputs_gen["RESOURCES_DC_CHARGE"] = vre_stor_in[(vre_stor_in.STOR_DC_CHARGE.!=0), :Resource]
+		inputs_gen["RESOURCES_AC_CHARGE"] = vre_stor_in[(vre_stor_in.STOR_AC_CHARGE.!=0), :Resource]
+		inputs_gen["ZONES_SOLAR"] = vre_stor_in[(vre_stor_in.SOLAR.!=0), :Zone]
+		inputs_gen["ZONES_WIND"] = vre_stor_in[(vre_stor_in.WIND.!=0), :Zone]
+		inputs_gen["ZONES_DC_DISCHARGE"] = vre_stor_in[(vre_stor_in.STOR_DC_DISCHARGE.!=0), :Zone]
+		inputs_gen["ZONES_AC_DISCHARGE"] = vre_stor_in[(vre_stor_in.STOR_AC_DISCHARGE.!=0), :Zone]
+		inputs_gen["ZONES_DC_CHARGE"] = vre_stor_in[(vre_stor_in.STOR_DC_CHARGE.!=0), :Zone]
+		inputs_gen["ZONES_AC_CHARGE"] = vre_stor_in[(vre_stor_in.STOR_AC_CHARGE.!=0), :Zone]
 
 		# Scale the parameters as needed
 		if setup["ParameterScale"] == 1

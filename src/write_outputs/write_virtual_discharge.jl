@@ -22,9 +22,10 @@ function write_virtual_discharge(path::AbstractString, inputs::Dict, setup::Dict
 		DC_CHARGE = inputs["VS_STOR_DC_CHARGE"]
 		AC_DISCHARGE = inputs["VS_STOR_AC_DISCHARGE"]
 		AC_CHARGE = inputs["VS_STOR_AC_CHARGE"]
-	    virtual_discharge[DC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data .* dfVRE_STOR[(dfVRE_STOR.VS_STOR_DC_DISCHARGE.!=0), :EtaInverter]) 
-		virtual_discharge[DC_CHARGE, :] .-= (value.(EP[:vCAPRES_DC_CHARGE][DC_CHARGE, :]).data ./ dfVRE_STOR[(dfVRE_STOR.VS_STOR_DC_CHARGE.!=0), :EtaInverter])
-		virtual_discharge[AC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data)
+		dfVRE_STOR = inputs["dfVRE_STOR"]
+	    virtual_discharge[DC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data .* dfVRE_STOR[(dfVRE_STOR.STOR_DC_DISCHARGE.!=0), :EtaInverter]) 
+		virtual_discharge[DC_CHARGE, :] .-= (value.(EP[:vCAPRES_DC_CHARGE][DC_CHARGE, :]).data ./ dfVRE_STOR[(dfVRE_STOR.STOR_DC_CHARGE.!=0), :EtaInverter])
+		virtual_discharge[AC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_AC_DISCHARGE][AC_DISCHARGE, :]).data)
 		virtual_discharge[AC_CHARGE, :] .-= (value.(EP[:vCAPRES_AC_CHARGE][AC_CHARGE, :]).data)
 	end
 
