@@ -477,8 +477,6 @@ function endogenous_retirement_vre_stor_stor!(EP::Model, inputs::Dict, num_stage
 	@constraint(EP, cLifetimeRetEnergy_VS[y in RET_CAP_STOR], eNewCapTrackEnergy_VS[y] + eMinRetCapTrackEnergy_VS[y] <= eRetCapTrackEnergy_VS[y])
 end
 
-end
-
 function endogenous_retirement_vre_stor_dc!(EP::Model, inputs::Dict, num_stages::Int, cur_stage::Int, stage_lens::Array{Int, 1})
 
 	println("Endogenous Retirement (VRE-Storage DC) Module")

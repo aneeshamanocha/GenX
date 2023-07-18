@@ -105,6 +105,11 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 	# Set of all storage resources eligible for energy capacity retirements
 	inputs_gen["RET_CAP_ENERGY"] = intersect(gen_in[gen_in.New_Build.!=-1,:R_ID], gen_in[gen_in.Existing_Cap_MWh.>=0,:R_ID], inputs_gen["STOR_ALL"])
 
+	# Set of asymmetric charge/discharge storage resources eligible for new charge capacity
+	inputs_gen["NEW_CAP_CHARGE"] = intersect(gen_in[gen_in.New_Build.==1,:R_ID], gen_in[gen_in.Max_Charge_Cap_MW.!=0,:R_ID], inputs_gen["STOR_ASYMMETRIC"])
+	# Set of asymmetric charge/discharge storage resources eligible for charge capacity retirements
+	inputs_gen["RET_CAP_CHARGE"] = intersect(gen_in[gen_in.New_Build.!=-1,:R_ID], gen_in[gen_in.Existing_Charge_Cap_MW.>=0,:R_ID], inputs_gen["STOR_ASYMMETRIC"])
+
 	# Names of resources
 	inputs_gen["RESOURCES"] = collect(skipmissing(gen_in[!,:Resource][1:inputs_gen["G"]]))
 	# Zones resources are located in

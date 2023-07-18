@@ -35,12 +35,7 @@ function minimum_capacity_requirement!(EP::Model, inputs::Dict, setup::Dict)
 	println("Minimum Capacity Requirement Module")
 	NumberOfMinCapReqs = inputs["NumberOfMinCapReqs"]
 
-	if setup["MinCapReqEqual"] == 0
-		@constraint(EP, cZoneMinCapReq[mincap = 1:NumberOfMinCapReqs], EP[:eMinCapRes][mincap] >= inputs["MinCapReq"][mincap])
-	elseif setup["MinCapReqEqual"] == 1
-		@constraint(EP, cZoneMinCapReq[mincap = 1:NumberOfMinCapReqs], EP[:eMinCapRes][mincap] == inputs["MinCapReq"][mincap])
-	
-	end
+	@constraint(EP, cZoneMinCapReq[mincap = 1:NumberOfMinCapReqs], EP[:eMinCapRes][mincap] == inputs["MinCapReq"][mincap])
 
 	# if input files are present, add minimum capacity requirement slack variables
 	if haskey(inputs, "MinCapPriceCap")

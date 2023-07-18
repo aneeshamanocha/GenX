@@ -136,8 +136,6 @@ include("model/resources/storage/storage_symmetric.jl")
 
 include("model/resources/vre_stor/vre_stor.jl")
 
-include("model/resources/vre_stor/vre_stor.jl")
-
 include("model/resources/thermal/thermal.jl")
 include("model/resources/thermal/thermal_commit.jl")
 include("model/resources/thermal/thermal_no_commit.jl")
