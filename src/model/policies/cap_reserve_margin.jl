@@ -52,9 +52,10 @@ Instead of modeling capacity reserve margin requirement (a.k.a. capacity market 
 Note that multiple capacity reserve margin requirements can be specified covering different individual zones or aggregations of zones, where the total number of constraints is specified by the GenX settings parameter ```CapacityReserveMargin``` (where this parameter should be an integer value > 0).
 The expressions establishing the capacity reserve margin contributions of each technology class are included in their respective technology modules.
 """
-function cap_reserve_margin(EP::Model, inputs::Dict, setup::Dict)
+function cap_reserve_margin!(EP::Model, inputs::Dict, setup::Dict)
 	# capacity reserve margin constraint
 	T = inputs["T"]
+	NCRM = inputs["NCapacityReserveMargin"]
 	println("Capacity Reserve Margin Policies Module")
 
 	#@constraint(EP, cCapacityResMargin[res=1:inputs["NCapacityReserveMargin"], t=1:T], EP[:eCapResMarBalance][res, t]
