@@ -12,6 +12,8 @@ function write_charge(path::AbstractString, inputs::Dict, setup::Dict, EP::Model
 	VRE_STOR = inputs["VRE_STOR"]
 	if !isempty(VRE_STOR)
 		VS_STOR = inputs["VS_STOR"]
+	else
+		VS_STOR = []
 	end
 	# Power withdrawn to charge each resource in each time step
 	dfCharge = DataFrame(Resource = inputs["RESOURCES"], Zone = dfGen[!,:Zone], AnnualSum = Array{Union{Missing,Float64}}(undef, G))
@@ -24,7 +26,7 @@ function write_charge(path::AbstractString, inputs::Dict, setup::Dict, EP::Model
 	if !isempty(FLEX)
 	    charge[FLEX, :] = value.(EP[:vCHARGE_FLEX][FLEX, :]) * scale_factor
 	end
-	if !isempty(VRE_STOR)
+	if !isempty(VS_STOR)
 		charge[VS_STOR, :] = value.(EP[:vCHARGE_VRE_STOR][VS_STOR, :]) * scale_factor
 	end
 

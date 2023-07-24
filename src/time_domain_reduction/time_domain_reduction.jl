@@ -1015,10 +1015,10 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                     solar_col_names = []
                     wind_col_names = []
                     for r in 1:length(RESOURCE_ZONES)
-                        if occursin("utilitypv", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                        if occursin("PV", RESOURCE_ZONES[r]) || occursin("pv", RESOURCE_ZONES[r]) || occursin("Pv", RESOURCE_ZONES[r]) || occursin("Solar", RESOURCE_ZONES[r]) || occursin("SOLAR", RESOURCE_ZONES[r]) || occursin("solar", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
                             push!(solar_col_names,r)
                         end
-                        if occursin("landbasedwind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                        if occursin("Wind", RESOURCE_ZONES[r]) || occursin("WIND", RESOURCE_ZONES[r]) || occursin("wind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
                             push!(wind_col_names, r)
                         end
                     end
@@ -1101,10 +1101,10 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                 solar_col_names = []
                 wind_col_names = []
                 for r in 1:length(RESOURCE_ZONES)
-                    if occursin("utilitypv", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                    if occursin("PV", RESOURCE_ZONES[r]) || occursin("pv", RESOURCE_ZONES[r]) || occursin("Pv", RESOURCE_ZONES[r]) || occursin("Solar", RESOURCE_ZONES[r]) || occursin("SOLAR", RESOURCE_ZONES[r]) || occursin("solar", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
                         push!(solar_col_names,r)
                     end
-                    if occursin("landbasedwind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                    if occursin("Wind", RESOURCE_ZONES[r]) || occursin("WIND", RESOURCE_ZONES[r]) || occursin("wind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
                         push!(wind_col_names, r)
                     end
                 end
@@ -1186,10 +1186,10 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
             solar_col_names = []
             wind_col_names = []
             for r in 1:length(RESOURCE_ZONES)
-                if occursin("utilitypv", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                if occursin("PV", RESOURCE_ZONES[r]) || occursin("pv", RESOURCE_ZONES[r]) || occursin("Pv", RESOURCE_ZONES[r]) || occursin("Solar", RESOURCE_ZONES[r]) || occursin("SOLAR", RESOURCE_ZONES[r]) || occursin("solar", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
                     push!(solar_col_names,r)
                 end
-                if occursin("landbasedwind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                if occursin("Wind", RESOURCE_ZONES[r]) || occursin("WIND", RESOURCE_ZONES[r]) || occursin("wind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
                     push!(wind_col_names, r)
                 end
             end

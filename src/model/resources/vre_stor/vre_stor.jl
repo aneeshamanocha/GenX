@@ -38,7 +38,8 @@ This module is split such that functions are called for each configurable compon
     and ```investment_charge_vre_stor!()```. The function ```vre_stor!()``` specifically ensures 
     that all necessary functions are called to activate the appropriate constraints, creates constraints that apply to 
     multiple components (i.e. inverter and grid connection balances and maximums), and activates all of the policies 
-    that have been created. Note that not all of these variables are indexed by each co-located VRE and storage resource (for example, some co-located resources 
+    that have been created (minimum capacity requirements, maximum capacity requirements, capacity reserve margins, operating reserves, and
+    energy share requirements can all be turned on for this module). Note that not all of these variables are indexed by each co-located VRE and storage resource (for example, some co-located resources 
     may only have a solar PV component and battery technology or just a wind component). Thus, the function ```vre_stor!()``` 
     ensures indexing issues do not arise across the various potential configurations of co-located VRE and storage 
     module but showcases all constraints as if each decision variable (that may be only applicable to certain components) 
@@ -82,7 +83,7 @@ The second constraint with only operating reserves activated is:
     & + \eta^{inverter}_{y,z} \times (f^{pv}_{y,z,t} + r^{pv}_{y,z,t} + f^{dc,dis}_{y,z,t} + r^{dc,dis}_{y,z,t}) + \frac{f^{dc,cha}_{y,z,t}}{\eta^{inverter}_{y,z}} \leq \Delta^{total}_{y,z} \quad \forall y \in \mathcal{VS}, \forall z \in \mathcal{Z}, \forall t \in \mathcal{T}
 \end{aligned}
 ```
-The second constraint with both capcity reserve margins and operating reserves activated is:
+The second constraint with both capacity reserve margins and operating reserves activated is:
 ```math
 \begin{aligned}
     & \Theta_{y,z,t} + \Pi_{y,z,t} + \Theta^{CRM,ac}_{y,z,t} + \Pi^{CRM,ac}_{y,z,t} + f^{ac,dis}_{y,z,t} + r^{ac,dis}_{y,z,t} + f^{ac,cha}_{y,z,t} + f^{wind}_{y,z,t} + r^{wind}_{y,z,t} \\
@@ -111,12 +112,14 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     DC = inputs["VS_DC"]                                            # Set of VRE-STOR generators with inverter-component
     WIND = inputs["VS_WIND"]                                        # Set of VRE-STOR generators with wind-component
     STOR = inputs["VS_STOR"]                                        # Set of VRE-STOR generators with storage-component
-
+    NEW_CAP = intersect(VRE_STOR, inputs["NEW_CAP"])                # Set of VRE-STOR generators eligible for new buildout
+    
     # Policy flags
     EnergyShareRequirement = setup["EnergyShareRequirement"]
 	CapacityReserveMargin = setup["CapacityReserveMargin"]
     MinCapReq = setup["MinCapReq"]
-    StorageLosses = setup["StorageLosses"]
+    MaxCapReq = setup["MaxCapReq"]
+    IncludeLossesInESR = setup["IncludeLossesInESR"]
     Reserves = setup["Reserves"]
     
     by_rid(rid, sym) = by_rid_df(rid, sym, dfVRE_STOR)
@@ -128,8 +131,14 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     ## 1. Objective Function Expressions ##
 
     # Separate grid costs
-    @expression(EP, eTotalCGrid, sum(dfGen[y,:Inv_Cost_per_MWyr]*EP[:vCAP][y]
-        + dfGen[y,:Fixed_OM_Cost_per_MWyr]*EP[:eTotalCap][y] for y in VRE_STOR))
+    @expression(EP, eCGrid[y in VRE_STOR],
+        if y in NEW_CAP # Resources eligible for new capacity
+            dfGen[y,:Inv_Cost_per_MWyr]*EP[:vCAP][y] + dfGen[y,:Fixed_OM_Cost_per_MWyr]*EP[:eTotalCap][y]
+        else
+            dfGen[y,:Fixed_OM_Cost_per_MWyr]*EP[:eTotalCap][y]
+        end
+    )
+    @expression(EP, eTotalCGrid, sum(eCGrid[y] for y in VRE_STOR))
 
 	## 2. Power Balance Expressions ##
 
@@ -175,10 +184,14 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
             sum(inputs["omega"][t]*by_rid(y,Symbol("ESRVreStor_$ESR"))*EP[:vP_SOLAR][y,t]*by_rid(y,:EtaInverter) 
             for y=intersect(SOLAR, dfVRE_STOR[findall(x->x>0,dfVRE_STOR[!,Symbol("ESRVreStor_$ESR")]),:R_ID]), t=1:T)
             + sum(inputs["omega"][t]*by_rid(y,Symbol("ESRVreStor_$ESR"))*EP[:vP_WIND][y,t] 
-            for y=intersect(WIND, dfVRE_STOR[findall(x->x>0,dfVRE_STOR[!,Symbol("ESRVreStor_$ESR")]),:R_ID]), t=1:T)
-            - sum(inputs["dfESR"][z,ESR]*StorageLosses*sum(EP[:eELOSS_VRE_STOR][y] 
-            for y=intersect(STOR, dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID])) for z=findall(x->x>0,inputs["dfESR"][:,ESR])))
+            for y=intersect(WIND, dfVRE_STOR[findall(x->x>0,dfVRE_STOR[!,Symbol("ESRVreStor_$ESR")]),:R_ID]), t=1:T))
         EP[:eESR] += eESRVREStor
+        if IncludeLossesInESR == 1
+            @expression(EP, eESRVREStorLosses[ESR=1:inputs["nESR"]], 
+                sum(inputs["dfESR"][z,ESR]*sum(EP[:eELOSS_VRE_STOR][y] 
+                for y=intersect(STOR, dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID])) for z=findall(x->x>0,inputs["dfESR"][:,ESR])))
+            EP[:eESR] -= eESRVREStorLosses
+        end
     end
 
     # Minimum Capacity Requirement
@@ -213,6 +226,41 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
             @expression(EP, eMinCapResDCStor[mincap = 1:inputs["NumberOfMinCapReqs"]], 
                 sum(by_rid(y,:Power_to_Energy_DC)*by_rid(y,:EtaInverter)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
 		    EP[:eMinCapRes] += eMinCapResDCStor
+        end
+    end
+
+    # Maximum Capacity Requirement
+    if MaxCapReq == 1
+        @expression(EP, eMaxCapResSolar[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
+            sum(by_rid(y,:EtaInverter)*EP[:eTotalCap_SOLAR][y] for y in intersect(SOLAR, dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagSolar_$mincap")].== 1),:][!,:R_ID])))
+		EP[:eMaxCapRes] += eMaxCapResSolar
+
+        @expression(EP, eMaxCapResWind[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
+            sum(EP[:eTotalCap_WIND][y] for y in intersect(WIND, dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagWind_$mincap")].== 1),:][!,:R_ID])))
+		EP[:eMaxCapRes] += eMaxCapResWind
+
+        if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+            @expression(EP, eMaxCapResACDis[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
+                sum(EP[:eTotalCapDischarge_AC][y] for y in intersect(inputs["VS_ASYM_AC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMaxCapRes] += eMaxCapResACDis
+        end
+
+        if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+            @expression(EP, eMaxCapResDCDis[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
+                sum(by_rid(y,:EtaInverter)*EP[:eTotalCapDischarge_DC][y] for y in intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMaxCapRes] += eMaxCapResDCDis
+        end
+
+        if !isempty(inputs["VS_SYM_AC"])
+            @expression(EP, eMaxCapResACStor[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
+                sum(by_rid(y,:Power_to_Energy_AC)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_AC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMaxCapRes] += eMaxCapResACStor
+        end
+
+        if !isempty(inputs["VS_SYM_DC"])
+            @expression(EP, eMaxCapResDCStor[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
+                sum(by_rid(y,:Power_to_Energy_DC)*by_rid(y,:EtaInverter)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+		    EP[:eMaxCapRes] += eMaxCapResDCStor
         end
     end
 
@@ -818,7 +866,7 @@ The following two constraints track the state of charge of the storage resources
     storage inventory in the first time step is linked to storage inventory at the last time step of the period representing the year. Alternatively, when modeling the entire year with multiple representative periods, 
     this constraint relates storage inventory in the first timestep of the representative period with the inventory at the last time step of the representative period, where each representative period is made of 
     $\tau^{period}$ time steps. In this implementation, energy exchange between representative periods is not permitted. When modeling representative time periods, GenX enables modeling of long duration 
-    energy storage which tracks state of charge between representative periods enable energy to be moved throughout the year. If ```OperationWrapping=1``` and ```LDS_VRE_STOR=1``` has been enabled for 
+    energy storage which tracks state of charge between representative periods enable energy to be moved throughout the year. If there is more than one representative period and ```LDS_VRE_STOR=1``` has been enabled for 
     resources in ```Vre_and_stor_data.csv```, this function calls ```lds_vre_stor!()``` to enable this feature. The first of these two constraints enforces storage inventory balance for interior time 
     steps $(t \in \mathcal{T}^{interior})$, while the second enforces storage balance constraint for the initial time step $(t \in \mathcal{T}^{start})$:
 ```math
@@ -840,7 +888,7 @@ The next set of constraints only apply to symmetric storage resources (all $y \i
     For storage technologies with symmetric charge and discharge capacity (all $y \in \mathcal{VS}^{sym,dc}  \cup y \in \mathcal{VS}^{sym,ac}$), 
     since storage resources generally represent a 'cluster' of multiple similar storage devices of the same type/cost in the same zone, GenX 
     permits storage resources to simultaneously charge and discharge (as some units could be charging while others discharge). The 
-    simultaenous sum of DC and AC charge, $\Pi^{dc}_{y,z,t}, \Pi^{ac}_{y,z,t}$, and discharge, $\Theta^{dc}_{y,z,t}, \Theta^{ac}_{y,z,t}$, is limited 
+    simultaneous sum of DC and AC charge, $\Pi^{dc}_{y,z,t}, \Pi^{ac}_{y,z,t}$, and discharge, $\Theta^{dc}_{y,z,t}, \Theta^{ac}_{y,z,t}$, is limited 
     by the total installed energy capacity, $\Delta^{total, energy}_{o,z}$, multiplied by the power to energy ratio, $\mu_{y,z}^{dc,stor}, 
     \mu_{y,z}^{ac,stor}$. Without any capacity reserve margin constraints or operating reserves, the symmetric AC and DC storage resources are constrained as:
 ```math
@@ -892,10 +940,10 @@ In addition, this function adds investment, fixed O&M, and variable O&M costs re
 \begin{aligned}
     & 	\sum_{y \in \mathcal{VS}^{stor}} \sum_{z \in \mathcal{Z}}
         \left( (\pi^{INVEST, energy}_{y,z} \times \Omega^{energy}_{y,z}) + (\pi^{FOM, energy}_{y,z} \times  \Delta^{total,energy}_{y,z}) \right) \\
-    &   + \sum_{y \in \mathcal{VS}^{sym,dc} \cup y \in \mathcal{VS}^{asym,dc,dis}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,dc,dis}_{y,z} \times \eta^{inverter}_{y,z} \times \Theta^{dc}_{y,z,t}) \\
-    &   + \sum_{y \in \mathcal{VS}^{sym,dc} \cup y \in \mathcal{VS}^{asym,dc,cha}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,dc,cha}_{y,z} \times \frac{\Pi^{dc}_{y,z,t}}{\eta^{inverter}_{y,z}}) \\
-    &   + \sum_{y \in \mathcal{VS}^{sym,ac} \cup y \in \mathcal{VS}^{asym,ac,dis}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,ac,dis}_{y,z} \times \Theta^{ac}_{y,z,t}) \\
-    &   + \sum_{y \in \mathcal{VS}^{sym,ac} \cup y \in \mathcal{VS}^{asym,ac,cha}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,ac,cha}_{y,z} \times \Pi^{ac}_{y,z,t})
+    &   + \sum_{y \in \mathcal{VS}^{sym,dc} \cup \mathcal{VS}^{asym,dc,dis}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,dc,dis}_{y,z} \times \eta^{inverter}_{y,z} \times \Theta^{dc}_{y,z,t}) \\
+    &   + \sum_{y \in \mathcal{VS}^{sym,dc} \cup \mathcal{VS}^{asym,dc,cha}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,dc,cha}_{y,z} \times \frac{\Pi^{dc}_{y,z,t}}{\eta^{inverter}_{y,z}}) \\
+    &   + \sum_{y \in \mathcal{VS}^{sym,ac} \cup \mathcal{VS}^{asym,ac,dis}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,ac,dis}_{y,z} \times \Theta^{ac}_{y,z,t}) \\
+    &   + \sum_{y \in \mathcal{VS}^{sym,ac} \cup \mathcal{VS}^{asym,ac,cha}} \sum_{z \in \mathcal{Z}} \sum_{t \in \mathcal{T}} (\pi^{VOM,ac,cha}_{y,z} \times \Pi^{ac}_{y,z,t})
 \end{aligned}
 ```
 """
@@ -924,8 +972,8 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     START_SUBPERIODS = inputs["START_SUBPERIODS"]
 	INTERIOR_SUBPERIODS = inputs["INTERIOR_SUBPERIODS"]
 	hours_per_subperiod = inputs["hours_per_subperiod"]     # total number of hours per subperiod
+    rep_periods = inputs["REP_PERIOD"]
 
-    OperationWrapping = setup["OperationWrapping"]
     MultiStage = setup["MultiStage"]
 
     by_rid(rid, sym) = by_rid_df(rid, sym, dfVRE_STOR)
@@ -1022,8 +1070,8 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
     # 3. Inverter & Power Balance, SoC Expressions
 
-    # Check for LDS=1 & OperationWrapping=1
-    if OperationWrapping == 1 && !isempty(VS_LDS) 
+    # Check for rep_periods > 1 & LDS=1
+    if rep_periods > 1 && !isempty(VS_LDS) 
 		CONSTRAINTSET = inputs["VS_nonLDS"]
 	else
 		CONSTRAINTSET = STOR
@@ -1104,15 +1152,19 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     for z in 1:Z, t=1:T
-        EP[:ePowerBalance_VRE_STOR][t, z] -= sum(vCHARGE_VRE_STOR[y,t] for y=dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID])
+        EP[:ePowerBalance_VRE_STOR][t, z] -= sum(vCHARGE_VRE_STOR[y,t] for y=intersect(STOR,dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID]))
     end
 
     # 4. Energy Share Requirement & CO2 Policy Module
 
     # From CO2 Policy module
 	@expression(EP, eELOSSByZone_VRE_STOR[z=1:Z],
-        sum(EP[:eELOSS_VRE_STOR][y] for y in intersect(STOR, dfGen[dfGen[!,:Zone].==z,:R_ID])))
-    EP[:eELOSSByZone] += eELOSSByZone_VRE_STOR
+        sum(EP[:eELOSS_VRE_STOR][y] for y in intersect(STOR,dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID])))
+    if !isempty(inputs["STOR_ALL"])
+        EP[:eELOSSByZone] += eELOSSByZone_VRE_STOR
+    else
+        @expression(EP, eELOSSByZone[z=1:Z], eELOSSByZone_VRE_STOR[z])
+    end
 
     ### CONSTRAINTS ###
 
@@ -1160,7 +1212,7 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     ### LONG DURATION ENERGY STORAGE RESOURCE MODULE ###
-    if OperationWrapping == 1 && !isempty(VS_LDS)
+    if rep_periods > 1 && !isempty(VS_LDS)
         lds_vre_stor!(EP, inputs)
     end
 end
@@ -1170,7 +1222,7 @@ end
 
 This function defines the decision variables, expressions, and constraints for any 
     long duration energy storage component of each co-located VRE and storage generator (
-    ```OperationWrapping=1``` and ```LDS_VRE_STOR=1``` in the ```Vre_and_stor_data.csv```). 
+    there is more than one representative period and ```LDS_VRE_STOR=1``` in the ```Vre_and_stor_data.csv```). 
 
 These constraints follow the same formulation that is outlined by the function ```long_duration_storage!()``` 
     in the storage module. One constraint changes, which links the state of charge between the start of periods 
@@ -1185,8 +1237,8 @@ These constraints follow the same formulation that is outlined by the function `
 \end{aligned}
 ```
     
-The rest of the long duration energy storage constraints are copied and applied for the co-located VRE and storage module for any 
-    long duration energy storage resources $y \in \mathcal{VS}^{LDES}$. Capacity reserve margin constraints for 
+The rest of the long duration energy storage constraints are copied and applied to the co-located VRE and storage module for any 
+    long duration energy storage resources $y \in \mathcal{VS}^{LDES}$ from the long-duration storage module. Capacity reserve margin constraints for 
     long duration energy storage resources are further elaborated upon in ```vre_stor_capres!()```.
 """
 function lds_vre_stor!(EP::Model, inputs::Dict)
@@ -1204,7 +1256,7 @@ function lds_vre_stor!(EP::Model, inputs::Dict)
 	NPeriods = size(inputs["Period_Map"])[1] # Number of modeled periods
     hours_per_subperiod = inputs["hours_per_subperiod"] #total number of hours per subperiod
 	MODELED_PERIODS_INDEX = 1:NPeriods
-	REP_PERIODS_INDEX = MODELED_PERIODS_INDEX[dfPeriodMap.Rep_Period .== MODELED_PERIODS_INDEX]
+    REP_PERIODS_INDEX = MODELED_PERIODS_INDEX[dfPeriodMap[!,:Rep_Period] .== MODELED_PERIODS_INDEX]
 
     by_rid(rid, sym) = by_rid_df(rid, sym, dfVRE_STOR)
 
@@ -1228,20 +1280,22 @@ function lds_vre_stor!(EP::Model, inputs::Dict)
     DC_CHARGE_CONSTRAINTSET = intersect(inputs["VS_STOR_DC_CHARGE"], VS_LDS)
     AC_DISCHARGE_CONSTRAINTSET = intersect(inputs["VS_STOR_AC_DISCHARGE"], VS_LDS)
     AC_CHARGE_CONSTRAINTSET = intersect(inputs["VS_STOR_AC_CHARGE"], VS_LDS)
-    for y in DC_DISCHARGE_CONSTRAINTSET, w=1:REP_PERIOD
-        EP[:eVreStorSoCBalLongDurationStorageStart][y,w] -= EP[:vP_DC_DISCHARGE][y,hours_per_subperiod*(w-1)+1]/by_rid(y,:Eff_Down_DC)
-    end
+    for w=1:REP_PERIOD
+        for y in DC_DISCHARGE_CONSTRAINTSET
+            EP[:eVreStorSoCBalLongDurationStorageStart][y,w] -= EP[:vP_DC_DISCHARGE][y,hours_per_subperiod*(w-1)+1]/by_rid(y,:Eff_Down_DC)
+        end
 
-    for y in DC_CHARGE_CONSTRAINTSET, w=1:REP_PERIOD
-        EP[:eVreStorSoCBalLongDurationStorageStart][y,w] += by_rid(y,:Eff_Up_DC)*EP[:vP_DC_CHARGE][y,hours_per_subperiod*(w-1)+1]
-    end
+        for y in DC_CHARGE_CONSTRAINTSET
+            EP[:eVreStorSoCBalLongDurationStorageStart][y,w] += by_rid(y,:Eff_Up_DC)*EP[:vP_DC_CHARGE][y,hours_per_subperiod*(w-1)+1]
+        end
 
-    for y in AC_DISCHARGE_CONSTRAINTSET, w=1:REP_PERIOD
-        EP[:eVreStorSoCBalLongDurationStorageStart][y,w] -= EP[:vP_AC_DISCHARGE][y,hours_per_subperiod*(w-1)+1]/by_rid(y,:Eff_Down_AC)
-    end
+        for y in AC_DISCHARGE_CONSTRAINTSET
+            EP[:eVreStorSoCBalLongDurationStorageStart][y,w] -= EP[:vP_AC_DISCHARGE][y,hours_per_subperiod*(w-1)+1]/by_rid(y,:Eff_Down_AC)
+        end
 
-    for y in AC_CHARGE_CONSTRAINTSET, w=1:REP_PERIOD
-        EP[:eVreStorSoCBalLongDurationStorageStart][y,w] += by_rid(y,:Eff_Up_AC)*EP[:vP_AC_CHARGE][y,hours_per_subperiod*(w-1)+1]
+        for y in AC_CHARGE_CONSTRAINTSET
+            EP[:eVreStorSoCBalLongDurationStorageStart][y,w] += by_rid(y,:Eff_Up_AC)*EP[:vP_AC_CHARGE][y,hours_per_subperiod*(w-1)+1]
+        end
     end
 
     ### CONSTRAINTS ### 
@@ -1277,7 +1331,7 @@ This function activates the decision variables and constraints for asymmetric st
     and discharge power capacities (any STOR flag = 2)). For asymmetric storage resources, the function is enabled so charging 
     and discharging can occur either through DC or AC capabilities. For example, a storage resource can be asymmetrically charged 
     and discharged via DC capabilities or a storage resource could be charged via AC capabilities and discharged through DC capabilities. 
-    This module is configured such that both AC and DC charging (or discharging) cannot simultaneously occur at once.
+    This module is configured such that both AC and DC charging (or discharging) cannot simultaneously occur.
 
 The total charge/discharge DC and AC capacities of each resource are defined as the sum of the existing charge/discharge DC and AC capacities plus 
     the newly invested charge/discharge DC and AC capacities minus any retired charge/discharge DC and AC capacities:
@@ -1406,6 +1460,7 @@ function investment_charge_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     VS_ASYM_AC_CHARGE = inputs["VS_ASYM_AC_CHARGE"]
     VS_ASYM_DC_DISCHARGE = inputs["VS_ASYM_DC_DISCHARGE"]
     VS_ASYM_AC_DISCHARGE = inputs["VS_ASYM_AC_DISCHARGE"]
+
     NEW_CAP_CHARGE_DC = inputs["NEW_CAP_CHARGE_DC"]
     RET_CAP_CHARGE_DC = inputs["RET_CAP_CHARGE_DC"]
     NEW_CAP_CHARGE_AC = inputs["NEW_CAP_CHARGE_AC"]
@@ -1805,7 +1860,7 @@ If long duration energy storage resources exist, a separate but similar set of v
 \begin{aligned}
     & \Gamma^{CRM}_{y,z,(m-1)\times \tau^{period}+1} = \left(1-\eta_{y,z}^{loss}\right)\times \left(\Gamma^{CRM}_{y,z,m\times \tau^{period}} -\Delta Q_{y,z,m}\right)  \\
     & + \frac{\Theta^{CRM,dc}_{y,z,(m-1)\times \tau^{period}+1}}{\eta_{y,z}^{discharge,dc}} + \frac{\Theta^{CRM,ac}_{y,z,(m-1)\times \tau^{period}+1}}{\eta_{y,z}^{discharge,ac}} \\
-    & - \eta_{y,z}^{charge,dc} \times \Pi^{dc}_{y,z,(m-1)\times \tau^{period}+1} - \eta_{y,z}^{charge,ac} \times \Pi^{ac}_{y,z,(m-1)\times \tau^{period}+1} \\
+    & - \eta_{y,z}^{charge,dc} \times \Pi^{CRM,dc}_{y,z,(m-1)\times \tau^{period}+1} - \eta_{y,z}^{charge,ac} \times \Pi^{CRM,ac}_{y,z,(m-1)\times \tau^{period}+1} \\
     & \forall y \in \mathcal{VS}^{LDES}, z \in \mathcal{Z}, m \in \mathcal{M}
 \end{aligned}
 ```
@@ -1838,8 +1893,7 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
     START_SUBPERIODS = inputs["START_SUBPERIODS"]
 	INTERIOR_SUBPERIODS = inputs["INTERIOR_SUBPERIODS"]
 	hours_per_subperiod = inputs["hours_per_subperiod"]     # total number of hours per subperiod
-
-    OperationWrapping = setup["OperationWrapping"]
+    rep_periods = inputs["REP_PERIOD"]
 
     by_rid(rid, sym) = by_rid_df(rid, sym, dfVRE_STOR)
     
@@ -1866,8 +1920,8 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
 
     # 1. Inverter & Power Balance, SoC Expressions
 
-    # Check for LDS=1 & OperationWrapping=1
-    if OperationWrapping == 1 && !isempty(VS_LDS)
+    # Check for rep_periods > 1 & LDS=1
+    if rep_periods > 1 && !isempty(VS_LDS)
         CONSTRAINTSET = inputs["VS_nonLDS"]
     else
         CONSTRAINTSET = STOR
@@ -1958,7 +2012,7 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
     ### CONSTRAINTS ###
 
     # Constraint 1: Links energy held in reserve in first time step with decisions in last time step of each subperiod
-    # We use a modified formulation of this constraint (cVSoCBalLongDurationStorageStart) when operations wrapping and long duration storage are being modeled
+    # We use a modified formulation of this constraint (cVSoCBalLongDurationStorageStart) when modeling multiple representative periods and long duration storage
     @constraint(EP, cVreStorVSoCBalStart[y in CONSTRAINTSET, t in START_SUBPERIODS], 
         vCAPRES_VS_VRE_STOR[y,t] == eVreStorVSoCBalStart[y,t])
     # Energy held in reserve for the next hour
@@ -1979,7 +2033,7 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
     EP[:eCapResMarBalance] += EP[:eCapResMarBalanceStor_VRE_STOR]
 
     ### LONG DURATION ENERGY STORAGE CAPACITY RESERVE MARGIN MODULE ###
-    if OperationWrapping == 1 & !isempty(VS_LDS)
+    if rep_periods > 1 && !isempty(VS_LDS)
 
         ### LOAD DATA ###
 
@@ -1987,7 +2041,7 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
         dfPeriodMap = inputs["Period_Map"] # Dataframe that maps modeled periods to representative periods
         NPeriods = size(inputs["Period_Map"])[1] # Number of modeled periods
         MODELED_PERIODS_INDEX = 1:NPeriods
-        REP_PERIODS_INDEX = MODELED_PERIODS_INDEX[dfPeriodMap.Rep_Period .== MODELED_PERIODS_INDEX]
+        REP_PERIODS_INDEX = MODELED_PERIODS_INDEX[dfPeriodMap[!,:Rep_Period] .== MODELED_PERIODS_INDEX]
 
         ### VARIABLES ###
 
@@ -2027,7 +2081,7 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
 
 		# Constraint 1: Links last time step with first time step, ensuring position in hour 1 is within eligible change from final hour position
 		# Modified initial virtual state of storage for long duration storage - initialize wth value carried over from last period
-		# Alternative to cVSoCBalStart constraint which is included when not modeling operations wrapping and long duration storage
+		# Alternative to cVSoCBalStart constraint which is included when modeling multiple representative periods and long duration storage
 		# Note: tw_min = hours_per_subperiod*(w-1)+1; tw_max = hours_per_subperiod*w
 		@constraint(EP, cVreStorVSoCBalLongDurationStorageStart[y in VS_LDS, w=1:REP_PERIOD],
             EP[:vCAPRES_VS_VRE_STOR][y,hours_per_subperiod*(w-1)+1] == eVreStorVSoCBalLongDurationStorageStart[y,w])
@@ -2198,16 +2252,16 @@ function vre_stor_reserves!(EP::Model, inputs::Dict, setup::Dict)
 
     @variables(EP, begin
         # Contribution to regulation (primary reserves), assumed to be symmetric (up & down directions equal)
-        vREG_Solar[y in SOLAR_REG, t=1:T] >= 0
-        vREG_Wind[y in WIND_REG, t=1:T] >= 0
+        vREG_SOLAR[y in SOLAR_REG, t=1:T] >= 0
+        vREG_WIND[y in WIND_REG, t=1:T] >= 0
         vREG_DC_Discharge[y in DC_DISCHARGE_REG, t=1:T] >= 0
         vREG_DC_Charge[y in DC_CHARGE_REG, t=1:T] >= 0
         vREG_AC_Discharge[y in AC_DISCHARGE_REG, t=1:T] >= 0
         vREG_AC_Charge[y in AC_CHARGE_REG, t=1:T] >= 0
 
         # Contribution to operating reserves (secondary reserves or contingency reserves); only model upward reserve requirements
-        vRSV_Solar[y in SOLAR_RSV, t=1:T] >= 0
-        vRSV_Wind[y in WIND_RSV, t=1:T] >= 0
+        vRSV_SOLAR[y in SOLAR_RSV, t=1:T] >= 0
+        vRSV_WIND[y in WIND_RSV, t=1:T] >= 0
         vRSV_DC_Discharge[y in DC_DISCHARGE_RSV, t=1:T] >= 0
         vRSV_DC_Charge[y in DC_CHARGE_RSV, t=1:T] >= 0
         vRSV_AC_Discharge[y in AC_DISCHARGE_RSV, t=1:T] >= 0
@@ -2267,7 +2321,7 @@ function vre_stor_reserves!(EP::Model, inputs::Dict, setup::Dict)
         for y in WIND_RSV
             eVreStorRsvOnlyBalance[y,t] += vRSV_WIND[y,t]
             EP[:eGridExport][y,t] += vRSV_WIND[y,t]
-            P[:eWindGenMaxW][y,t] += vRSV_WIND[y,t]
+            EP[:eWindGenMaxW][y,t] += vRSV_WIND[y,t]
         end
 
         for y in DC_DISCHARGE_REG
@@ -2406,14 +2460,14 @@ function vre_stor_reserves!(EP::Model, inputs::Dict, setup::Dict)
     if !isempty(SOLAR_REG)
         @constraints(EP, begin
             # Maximum generation and contribution to reserves up must be greater than zero
-            [y in SOLAR_REG, t=1:T], EP[:vP_SOLAR][y,t] - EP[:vREG_Solar][y,t] >= 0
+            [y in SOLAR_REG, t=1:T], EP[:vP_SOLAR][y,t] - EP[:vREG_SOLAR][y,t] >= 0
         end)
     end
 
     if !isempty(WIND_REG)
         @constraints(EP, begin
             # Maximum generation and contribution to reserves up must be greater than zero
-            [y in WIND_REG, t=1:T], EP[:vP_WIND][y,t] - EP[:vREG_Wind][y,t] >= 0
+            [y in WIND_REG, t=1:T], EP[:vP_WIND][y,t] - EP[:vREG_WIND][y,t] >= 0
         end)
     end
 
@@ -2444,4 +2498,13 @@ function vre_stor_reserves!(EP::Model, inputs::Dict, setup::Dict)
 			[y in STOR_REG_RSV_UNION, t=1:T], eDischargeMax[y,t] <= EP[:vS_VRE_STOR][y, hoursbefore(p,t,1)]
         end)
     end
+
+    # Total system reserve constraints
+    @expression(EP, eRegReqVreStor[t=1:T], inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in SOLAR) 
+        + inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in WIND))
+    @expression(EP, eRsvReqVreStor[t=1:T], inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in SOLAR) 
+        + inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in WIND))
+
+    @constraint(EP, cReg[t=1:T], sum(EP[:vREG][y,t] for y in inputs["REG"]) >= EP[:eRegReq][t] + eRegReqVreStor[t])
+    @constraint(EP, cRsvReq[t=1:T], sum(EP[:vRSV][y,t] for y in inputs["RSV"]) + EP[:vUNMET_RSV][t] >= EP[:eRsvReq][t] + eRsvReqVreStor[t])
 end

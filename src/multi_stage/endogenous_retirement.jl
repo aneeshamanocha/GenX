@@ -230,6 +230,7 @@ function endogenous_retirement_energy!(EP::Model, inputs::Dict, num_stages::Int,
 	@constraint(EP, cRetCapTrackEnergy[y in RET_CAP_ENERGY,p=1:(cur_stage-1)], vRETCAPTRACKENERGY[y,p] == 0)
 
 	@constraint(EP, cLifetimeRetEnergy[y in RET_CAP_ENERGY], eNewCapTrackEnergy[y] + eMinRetCapTrackEnergy[y]  <= eRetCapTrackEnergy[y])
+end
 
 function endogenous_retirement_vre_stor_dc!(EP::Model, inputs::Dict, num_stages::Int, cur_stage::Int, stage_lens::Array{Int, 1})
 

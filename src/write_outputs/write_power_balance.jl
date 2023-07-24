@@ -31,9 +31,8 @@ function write_power_balance(path::AbstractString, inputs::Dict, setup::Dict, EP
 		    powerbalance[(z-1)*10+3, :] = (-1) * (sum((value.(EP[:vCHARGE][STOR_ALL_ZONE, :]).data), dims = 1))
 		end
 		if !isempty(intersect(dfGen[dfGen.Zone.==z, :R_ID], VRE_STOR))
-			VRE_STOR_ALL_ZONE = intersect(dfGen[dfGen.Zone.==z, :R_ID], VRE_STOR)
 			VS_ALL_ZONE = intersect(dfGen[dfGen.Zone.==z, :R_ID], inputs["VS_STOR"])
-			powerbalance[(z-1)*10+2, :] = sum(value.(EP[:vP][VRE_STOR_ALL_ZONE, :]), dims = 1)
+			powerbalance[(z-1)*10+2, :] = sum(value.(EP[:vP][VS_ALL_ZONE, :]), dims = 1)
 			powerbalance[(z-1)*10+3, :] = (-1) * sum(value.(EP[:vCHARGE_VRE_STOR][VS_ALL_ZONE, :]).data, dims=1) 
 		end
 		if !isempty(intersect(dfGen[dfGen.Zone.==z, :R_ID], FLEX))

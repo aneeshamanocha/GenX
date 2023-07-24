@@ -75,11 +75,22 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 	elapsed_time_emissions = @elapsed write_emissions(path, inputs, setup, EP)
 	println("Time elapsed for writing emissions is")
 	println(elapsed_time_emissions)
+
+	dfVreStor = DataFrame()
+	if !isempty(inputs["VRE_STOR"])
+		dfVreStor = write_vre_stor(path, inputs, setup, EP)
+		VS_LDS = inputs["VS_LDS"]
+		VS_STOR = inputs["VS_STOR"]
+	else
+		VS_LDS = []
+		VS_STOR = []
+	end
+
 	if has_duals(EP) == 1
 		elapsed_time_reliability = @elapsed write_reliability(path, inputs, setup, EP)
 		println("Time elapsed for writing reliability is")
 		println(elapsed_time_reliability)
-		if !isempty(inputs["STOR_ALL"])
+		if !isempty(inputs["STOR_ALL"]) || !isempty(VS_STOR)
 			elapsed_time_stordual = @elapsed write_storagedual(path, inputs, setup, EP)
 			println("Time elapsed for writing storage duals is")
 			println(elapsed_time_stordual)
@@ -106,10 +117,9 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		end
 	end
 
-
 	# Output additional variables related inter-period energy transfer via storage
 	representative_periods = inputs["REP_PERIOD"]
-	if representative_periods > 1 && (!isempty(inputs["STOR_LONG_DURATION"]) || !isempty(inputs["VS_LDS"]))
+	if representative_periods > 1 && (!isempty(inputs["STOR_LONG_DURATION"]) || !isempty(VS_LDS))
 		elapsed_time_lds_init = @elapsed write_opwrap_lds_stor_init(path, inputs, setup, EP)
 		println("Time elapsed for writing lds init is")
 		println(elapsed_time_lds_init)
@@ -169,12 +179,9 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 		end
 
 
-		elapsed_time_net_rev = @elapsed write_net_revenue(path, inputs, setup, EP, dfCap, dfESRRev, dfResRevenue, dfChargingcost, dfPower, dfEnergyRevenue, dfSubRevenue, dfRegSubRevenue)
+		elapsed_time_net_rev = @elapsed write_net_revenue(path, inputs, setup, EP, dfCap, dfESRRev, dfResRevenue, dfChargingcost, dfPower, dfEnergyRevenue, dfSubRevenue, dfRegSubRevenue, dfVreStor)
 	  	println("Time elapsed for writing net revenue is")
 	  	println(elapsed_time_net_rev)
-	  	if !isempty(inputs["VRE_STOR"])
-			write_vre_stor(path, inputs, setup, EP)
-		end
 	end
 	
 	## Print confirmation

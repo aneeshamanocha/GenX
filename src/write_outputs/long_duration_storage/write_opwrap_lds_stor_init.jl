@@ -17,6 +17,10 @@ function write_opwrap_lds_stor_init(path::AbstractString, inputs::Dict, setup::D
 			end
 		end
 	end
+	if setup["ParameterScale"] == 1
+	    socw *= ModelScalingFactor
+	end
+
 	dfStorageInit = hcat(dfStorageInit, DataFrame(socw, :auto))
 	auxNew_Names=[Symbol("Resource");Symbol("Zone");[Symbol("n$t") for t in 1:NPeriods]]
 	rename!(dfStorageInit,auxNew_Names)

@@ -15,7 +15,7 @@ function write_virtual_discharge(path::AbstractString, inputs::Dict, setup::Dict
 
 	scale_factor = setup["ParameterScale"] == 1 ? ModelScalingFactor : 1
 	if !isempty(STOR_ALL)
-	    virtual_discharge[STOR_ALL, :] = (value.(EP[:vCAPCONTRSTOR_VP][STOR_ALL, :]).data - value.(EP[:vCAPCONTRSTOR_VCHARGE][STOR_ALL, :]).data) * scale_factor
+	    virtual_discharge[STOR_ALL, :] = (value.(EP[:vCAPRES_discharge][STOR_ALL, :]).data - value.(EP[:vCAPRES_charge][STOR_ALL, :]).data) * scale_factor
 	end
     if !isempty(VRE_STOR)
 		DC_DISCHARGE = inputs["VS_STOR_DC_DISCHARGE"]
@@ -23,10 +23,10 @@ function write_virtual_discharge(path::AbstractString, inputs::Dict, setup::Dict
 		AC_DISCHARGE = inputs["VS_STOR_AC_DISCHARGE"]
 		AC_CHARGE = inputs["VS_STOR_AC_CHARGE"]
 		dfVRE_STOR = inputs["dfVRE_STOR"]
-	    virtual_discharge[DC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data .* dfVRE_STOR[(dfVRE_STOR.STOR_DC_DISCHARGE.!=0), :EtaInverter]) 
-		virtual_discharge[DC_CHARGE, :] .-= (value.(EP[:vCAPRES_DC_CHARGE][DC_CHARGE, :]).data ./ dfVRE_STOR[(dfVRE_STOR.STOR_DC_CHARGE.!=0), :EtaInverter])
-		virtual_discharge[AC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_AC_DISCHARGE][AC_DISCHARGE, :]).data)
-		virtual_discharge[AC_CHARGE, :] .-= (value.(EP[:vCAPRES_AC_CHARGE][AC_CHARGE, :]).data)
+	    virtual_discharge[DC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_DC_DISCHARGE][DC_DISCHARGE, :]).data .* dfVRE_STOR[(dfVRE_STOR.STOR_DC_DISCHARGE.!=0), :EtaInverter]) * scale_factor
+		virtual_discharge[DC_CHARGE, :] .-= (value.(EP[:vCAPRES_DC_CHARGE][DC_CHARGE, :]).data ./ dfVRE_STOR[(dfVRE_STOR.STOR_DC_CHARGE.!=0), :EtaInverter]) * scale_factor
+		virtual_discharge[AC_DISCHARGE, :] .+= (value.(EP[:vCAPRES_AC_DISCHARGE][AC_DISCHARGE, :]).data) * scale_factor
+		virtual_discharge[AC_CHARGE, :] .-= (value.(EP[:vCAPRES_AC_CHARGE][AC_CHARGE, :]).data) * scale_factor
 	end
 
 	dfVirtualDischarge.AnnualSum .= virtual_discharge * inputs["omega"]

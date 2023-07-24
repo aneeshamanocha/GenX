@@ -30,11 +30,11 @@ function load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs::D
 	else
         my_dir = path
 	end
-	filename = "Vre_and_stor_solar_variability.csv"
-	vre_stor_solar = load_dataframe(joinpath(my_dir, filename))
+	filename1 = "Vre_and_stor_solar_variability.csv"
+	vre_stor_solar = load_dataframe(joinpath(my_dir, filename1))
 
-	filename = "Vre_and_stor_wind_variability.csv"
-	vre_stor_wind = load_dataframe(joinpath(my_dir, filename))
+	filename2 = "Vre_and_stor_wind_variability.csv"
+	vre_stor_wind = load_dataframe(joinpath(my_dir, filename2))
 
 	all_resources = inputs["RESOURCES"]
 
@@ -62,5 +62,6 @@ function load_vre_stor_variability!(setup::Dict, path::AbstractString, inputs::D
 	inputs["pP_Max_Solar"] = transpose(Matrix{Float64}(vre_stor_solar[1:inputs["T"],2:(inputs["G"]+1)]))
 	inputs["pP_Max_Wind"] = transpose(Matrix{Float64}(vre_stor_wind[1:inputs["T"],2:(inputs["G"]+1)]))
 
-	println(filename * " Successfully Read!")
+	println(filename1 * " Successfully Read!")
+	println(filename2 * " Successfully Read!")
 end

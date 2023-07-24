@@ -246,22 +246,6 @@ function reserves_core!(EP::Model, inputs::Dict, setup::Dict)
 	@expression(EP, eRsvReq[t=1:T], inputs["pRsv_Req_Load"]*sum(inputs["pD"][t,z] for z=1:Z) +
 				inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max"][y,t]*EP[:eTotalCap][y] for y in intersect(inputs["VRE"], inputs["MUST_RUN"])))
 
-	# Add VRE-storage resources
-	if !isempty(inputs["VRE_STOR"])
-		VS_SOLAR = inputs["VS_SOLAR"]
-		VS_WIND = inputs["VS_WIND"]
-		if !isempty((VS_SOLAR))
-			by_rid(rid, sym) = by_rid_df(rid, sym, inputs["dfVRE_STOR"])
-			eRegReq += inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in VS_SOLAR)
-			eRsvReq += inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in VS_SOLAR)
-		end
-
-		if !isempty((VS_WIND))
-			eRegReq += inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in VS_WIND)
-			eRsvReq += inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in VS_WIND)
-		end
-	end
-
 	# N-1 contingency requirement is considered only if Unit Commitment is being modeled
 	if UCommit >= 1 && (inputs["pDynamic_Contingency"] >= 1 || inputs["pStatic_Contingency"] > 0)
 		EP[:eRsvReq] = EP[:eRsvReq] + EP[:eContingencyReq]
@@ -282,7 +266,5 @@ function reserves_core!(EP::Model, inputs::Dict, setup::Dict)
 	# Regulation requirements as a percentage of load and scheduled variable renewable energy production in each hour
 	# Note: frequencty regulation up and down requirements are symmetric and all resources contributing to regulation are assumed to contribute equal capacity to both up and down directions
 	@constraint(EP, cReg[t=1:T], sum(vREG[y,t] for y in REG) >= EP[:eRegReq][t])
-
 	@constraint(EP, cRsvReq[t=1:T], sum(vRSV[y,t] for y in RSV) + vUNMET_RSV[t] >= EP[:eRsvReq][t])
-
 end

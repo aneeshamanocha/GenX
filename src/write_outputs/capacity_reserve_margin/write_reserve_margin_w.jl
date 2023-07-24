@@ -8,31 +8,6 @@ function write_reserve_margin_w(path::AbstractString, inputs::Dict, setup::Dict,
 	end
 	dfResMar_w = hcat(dfResMar_w, DataFrame(temp_ResMar_w, :auto))
 	auxNew_Names_res=[Symbol("Constraint"); [Symbol("CapRes_$i") for i in 1:inputs["NCapacityReserveMargin"]]]
-	rename!(dfResMar_w,auxNew_Names_res)
-
-	maxbindinglength = 0
-	for i in 1:inputs["NCapacityReserveMargin"]
-		resmar_ts = dfResMar_w[!,Symbol("CapRes_$i")]
-		t = 1
-		currentmax = 0
-		while t <= T
-			if resmar_ts[t] > 0.1
-				if hoursbefore(p, t, 1) == (t-1)
-					currentmax += 1
-					t = t+1
-				else 
-					maxbindinglength = max(currentmax, maxbindinglength)
-					currentmax = 1
-					t = t+1
-				end
-			else
-				maxbindinglength = max(currentmax, maxbindinglength)
-				currentmax = 0
-				t = t+1
-			end
-		end
-	end
-				
-
+	rename!(dfResMar_w,auxNew_Names_res)			
 	CSV.write(joinpath(path, "ReserveMargin_w.csv"), dfResMar_w)
 end

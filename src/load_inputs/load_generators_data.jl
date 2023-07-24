@@ -242,7 +242,6 @@ function check_vre_stor_validity(df::DataFrame)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :VRE)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :MUST_RUN)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :LDS)
-	check_any_nonzero_with_vre_stor!(error_strings, df, :Var_OM_Cost_per_MWh)
 	check_any_nonzero_with_vre_stor!(error_strings, df, :Var_OM_Cost_per_MWh_In)
 
 	return error_strings
@@ -272,8 +271,6 @@ For co-located VRE-storage resources, this function returns the storage type
 """
 function split_storage_resources!(df::DataFrame, inputs::Dict, setup::Dict)
 
-	VRE_STOR = inputs["VRE_STOR"]
-
 	# All Storage Resources
 	inputs["VS_STOR"] = union(df[df.STOR_DC_CHARGE.>=1,:R_ID], df[df.STOR_AC_CHARGE.>=1,:R_ID], 
 		df[df.STOR_DC_DISCHARGE.>=1,:R_ID], df[df.STOR_AC_DISCHARGE.>=1,:R_ID])
@@ -300,13 +297,8 @@ function split_storage_resources!(df::DataFrame, inputs::Dict, setup::Dict)
 	inputs["VS_ASYM_AC_CHARGE"] = df[df.STOR_AC_CHARGE.==2,:R_ID]
 
 	# Storage LDS & Non-LDS Resources
-	if setup["OperationWrapping"] == 1
-		inputs["VS_LDS"] = df[(df.LDS_VRE_STOR.!=0),:R_ID]
-		inputs["VS_nonLDS"] = setdiff(STOR, inputs["VS_LDS"])
-	else
-		inputs["VS_LDS"] = Int[]
-		inputs["VS_nonLDS"] = VRE_STOR
-	end
+	inputs["VS_LDS"] = df[(df.LDS_VRE_STOR.!=0),:R_ID]
+	inputs["VS_nonLDS"] = setdiff(STOR, inputs["VS_LDS"])
 
     # Symmetric and asymmetric storage resources
 	inputs["VS_ASYM"] = union(inputs["VS_ASYM_DC_CHARGE"], inputs["VS_ASYM_DC_DISCHARGE"], 
