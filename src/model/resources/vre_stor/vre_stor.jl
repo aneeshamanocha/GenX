@@ -1152,14 +1152,16 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     for z in 1:Z, t=1:T
-        EP[:ePowerBalance_VRE_STOR][t, z] -= sum(vCHARGE_VRE_STOR[y,t] for y=intersect(STOR,dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID]))
+        if !isempty(dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID])
+            EP[:ePowerBalance_VRE_STOR][t, z] -= sum(vCHARGE_VRE_STOR[y,t] for y=intersect(dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID],STOR))
+        end
     end
 
     # 4. Energy Share Requirement & CO2 Policy Module
 
     # From CO2 Policy module
 	@expression(EP, eELOSSByZone_VRE_STOR[z=1:Z],
-        sum(EP[:eELOSS_VRE_STOR][y] for y in intersect(STOR,dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID])))
+        sum(EP[:eELOSS_VRE_STOR][y] for y in intersect(dfVRE_STOR[(dfVRE_STOR[!,:Zone].==z),:][!,:R_ID],STOR)))
     if !isempty(inputs["STOR_ALL"])
         EP[:eELOSSByZone] += eELOSSByZone_VRE_STOR
     else
@@ -2500,11 +2502,15 @@ function vre_stor_reserves!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     # Total system reserve constraints
-    @expression(EP, eRegReqVreStor[t=1:T], inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in SOLAR) 
-        + inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in WIND))
-    @expression(EP, eRsvReqVreStor[t=1:T], inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in SOLAR) 
-        + inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in WIND))
+    @expression(EP, eRegReqVreStor[t=1:T], inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in SOLAR_REG) 
+        + inputs["pReg_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in WIND_REG))
+    @expression(EP, eRsvReqVreStor[t=1:T], inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Solar"][y,t]*EP[:eTotalCap_SOLAR][y]*by_rid(y, :EtaInverter) for y in SOLAR_RSV) 
+        + inputs["pRsv_Req_VRE"]*sum(inputs["pP_Max_Wind"][y,t]*EP[:eTotalCap_WIND][y] for y in WIND_RSV))
 
-    @constraint(EP, cReg[t=1:T], sum(EP[:vREG][y,t] for y in inputs["REG"]) >= EP[:eRegReq][t] + eRegReqVreStor[t])
-    @constraint(EP, cRsvReq[t=1:T], sum(EP[:vRSV][y,t] for y in inputs["RSV"]) + EP[:vUNMET_RSV][t] >= EP[:eRsvReq][t] + eRsvReqVreStor[t])
+    if !isempty(VRE_STOR_REG)
+        @constraint(EP, cRegVreStor[t=1:T], sum(EP[:vREG][y,t] for y in inputs["REG"]) >= EP[:eRegReq][t] + eRegReqVreStor[t])
+    end
+    if !isempty(VRE_STOR_RSV)
+        @constraint(EP, cRsvReqVreStor[t=1:T], sum(EP[:vRSV][y,t] for y in inputs["RSV"]) + EP[:vUNMET_RSV][t] >= EP[:eRsvReq][t] + eRsvReqVreStor[t])
+    end
 end

@@ -48,17 +48,22 @@ function write_vre_stor_capacity(path::AbstractString, inputs::Dict, setup::Dict
 	dfGen = inputs["dfGen"]
 	dfVRE_STOR = inputs["dfVRE_STOR"]
 
+	MultiStage = setup["MultiStage"]
+
 	# Solar capacity
 	capsolar = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapsolar = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapsolar = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 
 	# Wind capacity
 	capwind = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapwind = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapwind = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 
 	# Inverter capacity
 	capdc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapdc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapdc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 
 	# Grid connection capacity
 	capgrid = zeros(size(inputs["RESOURCES_VRE_STOR"]))
@@ -73,50 +78,65 @@ function write_vre_stor_capacity(path::AbstractString, inputs::Dict, setup::Dict
 	# Charge storage capacity DC
 	capchargedc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapchargedc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapchargedc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 
 	# Charge storage capacity AC
 	capchargeac = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapchargeac = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapchargeac = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 
 	# Discharge storage capacity DC
 	capdischargedc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapdischargedc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapdischargedc = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 
 	# Discharge storage capacity AC
 	capdischargeac = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	retcapdischargeac = zeros(size(inputs["RESOURCES_VRE_STOR"]))
+	existingcapdischargeac = zeros(size(inputs["RESOURCES_VRE_STOR"]))
 	
 	j = 1
 	for i in VRE_STOR
-		if i in intersect(inputs["NEW_CAP"], VRE_STOR)
+		existingcapgrid[j] = MultiStage == 1 ? value(EP[:vEXISTINGCAP][i]) : dfGen[!,:Existing_Cap_MW][i]
+		if i in inputs["NEW_CAP"]
 			capgrid[j] = value(EP[:vCAP][i])
 		end
-		if i in intersect(inputs["RET_CAP"], VRE_STOR)
+		if i in inputs["RET_CAP"]
 			retcapgrid[j] = value(EP[:vRETCAP][i])
 		end
 
-		if i in intersect(inputs["NEW_CAP_SOLAR"], SOLAR)
-			capsolar[j] = value(EP[:vSOLARCAP][i])
-		end
-		if i in intersect(inputs["RET_CAP_SOLAR"], SOLAR)
-			retcapsolar[j] = first(value.(EP[:vRETSOLARCAP][i]))
-		end
-
-		if i in intersect(inputs["NEW_CAP_WIND"], WIND)
-			capwind[j] = value(EP[:vWINDCAP][i])
-		end
-		if i in intersect(inputs["RET_CAP_WIND"], WIND)
-			retcapwind[j] = first(value.(EP[:vRETWINDCAP][i]))
+		if i in SOLAR
+			existingcapsolar[j] = MultiStage == 1 ? value(EP[:vEXISTINGSOLARCAP][i]) : dfVRE_STOR[!,:Existing_Cap_Solar_MW][j]
+			if i in inputs["NEW_CAP_SOLAR"]
+				capsolar[j] = value(EP[:vSOLARCAP][i])
+			end
+			if i in inputs["RET_CAP_SOLAR"]
+				retcapsolar[j] = first(value.(EP[:vRETSOLARCAP][i]))
+			end
 		end
 
-		if i in intersect(inputs["NEW_CAP_DC"], DC)
-			capdc[j] = value(EP[:vDCCAP][i])
-		end
-		if i in intersect(inputs["RET_CAP_DC"], DC)
-			retcapdc[j] = first(value.(EP[:vRETDCCAP][i]))
+		if i in WIND
+			existingcapwind[j] = MultiStage == 1 ? value(EP[:vEXISTINGWINDCAP][i]) : dfVRE_STOR[!,:Existing_Cap_Wind_MW][j]
+			if i in inputs["NEW_CAP_WIND"]
+				capwind[j] = value(EP[:vWINDCAP][i])
+			end
+			if i in inputs["RET_CAP_WIND"]
+				retcapwind[j] = first(value.(EP[:vRETWINDCAP][i]))
+			end
 		end
 
-		if !isempty(STOR)
+		if i in DC
+			existingcapdc[j] = MultiStage == 1 ? value(EP[:vEXISTINGDCCAP][i]) : dfVRE_STOR[!,:Existing_Cap_Inverter_MW][j]
+			if i in inputs["NEW_CAP_DC"]
+				capdc[j] = value(EP[:vDCCAP][i])
+			end
+			if i in inputs["RET_CAP_DC"]
+				retcapdc[j] = first(value.(EP[:vRETDCCAP][i]))
+			end
+		end
+
+		if i in STOR
+			existingcapenergy[j] = MultiStage == 1 ? value(EP[:vEXISTINGCAPENERGY_VS][i]) : dfGen[!,:Existing_Cap_MWh][i]
 			if i in inputs["NEW_CAP_STOR"]
 				capenergy[j] = value(EP[:vCAPENERGY_VS][i])
 			end
@@ -124,59 +144,60 @@ function write_vre_stor_capacity(path::AbstractString, inputs::Dict, setup::Dict
 				retcapenergy[j] = first(value.(EP[:vRETCAPENERGY_VS][i]))
 			end
 
-			if !isempty(inputs["VS_ASYM_DC_CHARGE"])
+			if i in inputs["VS_ASYM_DC_CHARGE"]
 				if i in inputs["NEW_CAP_CHARGE_DC"]
 					capchargedc[j] = value(EP[:vCAPCHARGE_DC][i])
 				end
 				if i in inputs["RET_CAP_CHARGE_DC"]
 					retcapchargedc[j] = value(EP[:vRETCAPCHARGE_DC][i])
 				end
+				existingcapchargedc[j] = MultiStage == 1 ? value(EP[:vEXISTINGCAPCHARGEDC][i]) : dfVRE_STOR[!,:Existing_Cap_Charge_DC_MW][j]
 			end
-			if !isempty(inputs["VS_ASYM_AC_CHARGE"])
+			if i in inputs["VS_ASYM_AC_CHARGE"]
 				if i in inputs["NEW_CAP_CHARGE_AC"]
 					capchargeac[j] = value(EP[:vCAPCHARGE_AC][i])
 				end
 				if i in inputs["RET_CAP_CHARGE_AC"]
 					retcapchargeac[j] = value(EP[:vRETCAPCHARGE_AC][i])
 				end
+				existingcapchargeac[j] = MultiStage == 1 ? value(EP[:vEXISTINGCAPCHARGEAC][i]) : dfVRE_STOR[!,:Existing_Cap_Charge_AC_MW][j]
 			end
-			if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
+			if i in inputs["VS_ASYM_DC_DISCHARGE"]
 				if i in inputs["NEW_CAP_DISCHARGE_DC"]
 					capdischargedc[j] = value(EP[:vCAPDISCHARGE_DC][i])
 				end
 				if i in inputs["RET_CAP_DISCHARGE_DC"]
 					retcapdischargedc[j] = value(EP[:vRETCAPDISCHARGE_DC][i])
 				end
+				existingcapdischargedc[j] = MultiStage == 1 ? value(EP[:vEXISTINGCAPDISCHARGEDC][i]) : dfVRE_STOR[!,:Existing_Cap_Discharge_DC_MW][j]
 			end
-			if !isempty(inputs["VS_ASYM_AC_DISCHARGE"])
+			if i in inputs["VS_ASYM_AC_DISCHARGE"]
 				if i in inputs["NEW_CAP_DISCHARGE_AC"]
 					capdischargeac[j] = value(EP[:vCAPDISCHARGE_AC][i])
 				end
 				if i in inputs["RET_CAP_DISCHARGE_AC"]
 					retcapdischargeac[j] = value(EP[:vRETCAPDISCHARGE_AC][i])
 				end
+				existingcapdischargeac[j] = MultiStage == 1 ? value(EP[:vEXISTINGCAPDISCHARGEAC][i]) : dfVRE_STOR[!,:Existing_Cap_Discharge_AC_MW][j]
 			end
 		end
-
-		existingcapgrid[j] = dfGen[!,:Existing_Cap_MW][i]
-		existingcapenergy[j] = dfGen[!,:Existing_Cap_MWh][i]
 		j += 1
 	end
 
 	dfCap = DataFrame(
 		Resource = inputs["RESOURCES_VRE_STOR"], Zone = dfVRE_STOR[!,:Zone], Resource_Type = dfVRE_STOR[!,:Resource_Type], Cluster=dfVRE_STOR[!,:cluster], 
-		StartCapSolar = dfVRE_STOR[!,:Existing_Cap_Solar_MW],
+		StartCapSolar = existingcapsolar[:],
 		RetCapSolar = retcapsolar[:],
 		NewCapSolar = capsolar[:],
-		EndCapSolar = dfVRE_STOR[!,:Existing_Cap_Solar_MW] - retcapsolar[:] + capsolar[:],
-		StartCapWind = dfVRE_STOR[!,:Existing_Cap_Wind_MW],
+		EndCapSolar = existingcapsolar[:] - retcapsolar[:] + capsolar[:],
+		StartCapWind = existingcapwind[:],
 		RetCapWind = retcapwind[:],
 		NewCapWind = capwind[:],
-		EndCapWind = dfVRE_STOR[!,:Existing_Cap_Wind_MW] - retcapwind[:] + capwind[:],
-		StartCapDC = dfVRE_STOR[!,:Existing_Cap_Inverter_MW],
+		EndCapWind = existingcapwind[:] - retcapwind[:] + capwind[:],
+		StartCapDC = existingcapdc[:],
 		RetCapDC = retcapdc[:],
 		NewCapDC = capdc[:],
-		EndCapDC = dfVRE_STOR[!,:Existing_Cap_Inverter_MW] - retcapdc[:] + capdc[:],
+		EndCapDC = existingcapdc[:] - retcapdc[:] + capdc[:],
 		StartCapGrid = existingcapgrid[:],
 		RetCapGrid = retcapgrid[:],
 		NewCapGrid = capgrid[:],
@@ -185,22 +206,22 @@ function write_vre_stor_capacity(path::AbstractString, inputs::Dict, setup::Dict
 		RetEnergyCap = retcapenergy[:],
 		NewEnergyCap = capenergy[:],
 		EndEnergyCap = existingcapenergy[:] - retcapenergy[:] + capenergy[:],
-		StartChargeDCCap = dfVRE_STOR[!,:Existing_Cap_Charge_DC_MW],
+		StartChargeDCCap = existingcapchargedc[:],
 		RetChargeDCCap = retcapchargedc[:],
 		NewChargeDCCap = capchargedc[:],
-		EndChargeDCCap = dfVRE_STOR[!,:Existing_Cap_Charge_DC_MW] - retcapchargedc[:] + capchargedc[:],
-		StartChargeACCap = dfVRE_STOR[!,:Existing_Cap_Charge_AC_MW],
+		EndChargeDCCap = existingcapchargedc[:] - retcapchargedc[:] + capchargedc[:],
+		StartChargeACCap = existingcapchargeac[:],
 		RetChargeACCap = retcapchargeac[:],
 		NewChargeACCap = capchargeac[:],
-		EndChargeACCap = dfVRE_STOR[!,:Existing_Cap_Charge_AC_MW] - retcapchargeac[:] + capchargeac[:],
-		StartDischargeDCCap = dfVRE_STOR[!,:Existing_Cap_Discharge_DC_MW],
+		EndChargeACCap = existingcapchargeac[:] - retcapchargeac[:] + capchargeac[:],
+		StartDischargeDCCap = existingcapdischargedc[:],
 		RetDischargeDCCap = retcapdischargedc[:],
 		NewDischargeDCCap = capdischargedc[:],
-		EndDischargeDCCap = dfVRE_STOR[!,:Existing_Cap_Discharge_DC_MW] - retcapdischargedc[:] + capdischargedc[:],
-		StartDischargeACCap = dfVRE_STOR[!,:Existing_Cap_Discharge_AC_MW],
+		EndDischargeDCCap = existingcapdischargedc[:] - retcapdischargedc[:] + capdischargedc[:],
+		StartDischargeACCap = existingcapdischargeac[:],
 		RetDischargeACCap = retcapdischargeac[:],
 		NewDischargeACCap = capdischargeac[:],
-		EndDischargeACCap = dfVRE_STOR[!,:Existing_Cap_Discharge_AC_MW] - retcapdischargeac[:] + capdischargeac[:]
+		EndDischargeACCap = existingcapdischargeac[:] - retcapdischargeac[:] + capdischargeac[:]
 	)
 
 	if setup["ParameterScale"] ==1

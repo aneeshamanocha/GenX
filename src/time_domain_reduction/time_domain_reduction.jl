@@ -952,6 +952,8 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
             Stage_Weights = Dict()
             Stage_PeriodMaps = Dict()
             Stage_Outfiles = Dict()
+            SolarVar_Outfile = joinpath(TimeDomainReductionFolder, "Vre_and_stor_solar_variability.csv")
+            WindVar_Outfile = joinpath(TimeDomainReductionFolder, "Vre_and_stor_wind_variability.csv")
             for per in 1:NumStages                      # Iterate over multi-stages
                 mkpath(joinpath(inpath,"Inputs","Inputs_p$per", TimeDomainReductionFolder))
                 # Stage-specific weights and mappings
@@ -968,8 +970,6 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                 Stage_Outfiles[per]["PMap"] = joinpath("Inputs_p$per", PMap_Outfile)
                 Stage_Outfiles[per]["YAML"] = joinpath("Inputs_p$per", YAML_Outfile)
                 if !isempty(inputs_dict[per]["VRE_STOR"])
-                    SolarVar_Outfile = joinpath(TimeDomainReductionFolder, "Vre_and_stor_solar_variability.csv")
-                    WindVar_Outfile = joinpath(TimeDomainReductionFolder, "Vre_and_stor_wind_variability.csv")
                     Stage_Outfiles[per]["GSolar"] = joinpath("Inputs_p$per", SolarVar_Outfile)
                     Stage_Outfiles[per]["GWind"] = joinpath("Inputs_p$per", WindVar_Outfile)
                 end
@@ -1011,14 +1011,14 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                     gen_var = load_dataframe(joinpath(inpath, "Inputs", Stage_Outfiles[per]["GVar"]))
     
                     # Find which indexes have solar PV/wind names
-                    RESOURCE_ZONES = NewGVColNames
+                    RESOURCE_ZONES_VRE_STOR = NewGVColNames
                     solar_col_names = []
                     wind_col_names = []
-                    for r in 1:length(RESOURCE_ZONES)
-                        if occursin("PV", RESOURCE_ZONES[r]) || occursin("pv", RESOURCE_ZONES[r]) || occursin("Pv", RESOURCE_ZONES[r]) || occursin("Solar", RESOURCE_ZONES[r]) || occursin("SOLAR", RESOURCE_ZONES[r]) || occursin("solar", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                    for r in 1:length(RESOURCE_ZONES_VRE_STOR)
+                        if occursin("PV", RESOURCE_ZONES_VRE_STOR[r]) || occursin("pv", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Pv", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Solar", RESOURCE_ZONES_VRE_STOR[r]) || occursin("SOLAR", RESOURCE_ZONES_VRE_STOR[r]) || occursin("solar", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Time", RESOURCE_ZONES_VRE_STOR[r])
                             push!(solar_col_names,r)
                         end
-                        if occursin("Wind", RESOURCE_ZONES[r]) || occursin("WIND", RESOURCE_ZONES[r]) || occursin("wind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                        if occursin("Wind", RESOURCE_ZONES_VRE_STOR[r]) || occursin("WIND", RESOURCE_ZONES_VRE_STOR[r]) || occursin("wind", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Time", RESOURCE_ZONES_VRE_STOR[r])
                             push!(wind_col_names, r)
                         end
                     end
@@ -1029,8 +1029,8 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                     wind_var = gen_var[!, wind_col_names]
                     wind_var[!, :Time_Index] = 1:size(wind_var,1)
     
-                    CSV.write(joinpath(inpath, "Inputs", Stage_Outfiles[per]["GSolar"], SolarVar_Outfile), solar_var)
-                    CSV.write(joinpath(inpath, "Inputs", Stage_Outfiles[per]["GWind"], WindVar_Outfile), wind_var)
+                    CSV.write(joinpath(inpath, "Inputs", Stage_Outfiles[per]["GSolar"]), solar_var)
+                    CSV.write(joinpath(inpath, "Inputs", Stage_Outfiles[per]["GWind"]), wind_var)
                 end
 
                 ### TDR_Results/Fuels_data.csv
@@ -1097,14 +1097,14 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                 gen_var = load_dataframe(joinpath(inpath,"Inputs",input_stage_directory,GVar_Outfile))
 
                 # Find which indexes have solar PV/wind names
-                RESOURCE_ZONES = NewGVColNames
+                RESOURCE_ZONES_VRE_STOR = NewGVColNames
                 solar_col_names = []
                 wind_col_names = []
-                for r in 1:length(RESOURCE_ZONES)
-                    if occursin("PV", RESOURCE_ZONES[r]) || occursin("pv", RESOURCE_ZONES[r]) || occursin("Pv", RESOURCE_ZONES[r]) || occursin("Solar", RESOURCE_ZONES[r]) || occursin("SOLAR", RESOURCE_ZONES[r]) || occursin("solar", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                for r in 1:length(RESOURCE_ZONES_VRE_STOR)
+                    if occursin("PV", RESOURCE_ZONES_VRE_STOR[r]) || occursin("pv", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Pv", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Solar", RESOURCE_ZONES_VRE_STOR[r]) || occursin("SOLAR", RESOURCE_ZONES_VRE_STOR[r]) || occursin("solar", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Time", RESOURCE_ZONES_VRE_STOR[r])
                         push!(solar_col_names,r)
                     end
-                    if occursin("Wind", RESOURCE_ZONES[r]) || occursin("WIND", RESOURCE_ZONES[r]) || occursin("wind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                    if occursin("Wind", RESOURCE_ZONES_VRE_STOR[r]) || occursin("WIND", RESOURCE_ZONES_VRE_STOR[r]) || occursin("wind", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Time", RESOURCE_ZONES_VRE_STOR[r])
                         push!(wind_col_names, r)
                     end
                 end
@@ -1182,14 +1182,14 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
             gen_var = load_dataframe(joinpath(inpath,GVar_Outfile))
 
             # Find which indexes have solar PV/wind names
-            RESOURCE_ZONES = NewGVColNames
+            RESOURCE_ZONES_VRE_STOR = NewGVColNames
             solar_col_names = []
             wind_col_names = []
-            for r in 1:length(RESOURCE_ZONES)
-                if occursin("PV", RESOURCE_ZONES[r]) || occursin("pv", RESOURCE_ZONES[r]) || occursin("Pv", RESOURCE_ZONES[r]) || occursin("Solar", RESOURCE_ZONES[r]) || occursin("SOLAR", RESOURCE_ZONES[r]) || occursin("solar", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+            for r in 1:length(RESOURCE_ZONES_VRE_STOR)
+                if occursin("PV", RESOURCE_ZONES_VRE_STOR[r]) || occursin("pv", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Pv", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Solar", RESOURCE_ZONES_VRE_STOR[r]) || occursin("SOLAR", RESOURCE_ZONES_VRE_STOR[r]) || occursin("solar", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Time", RESOURCE_ZONES_VRE_STOR[r])
                     push!(solar_col_names,r)
                 end
-                if occursin("Wind", RESOURCE_ZONES[r]) || occursin("WIND", RESOURCE_ZONES[r]) || occursin("wind", RESOURCE_ZONES[r]) || occursin("Time", RESOURCE_ZONES[r])
+                if occursin("Wind", RESOURCE_ZONES_VRE_STOR[r]) || occursin("WIND", RESOURCE_ZONES_VRE_STOR[r]) || occursin("wind", RESOURCE_ZONES_VRE_STOR[r]) || occursin("Time", RESOURCE_ZONES_VRE_STOR[r])
                     push!(wind_col_names, r)
                 end
             end
