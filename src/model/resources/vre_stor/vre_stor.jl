@@ -216,7 +216,7 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
         if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
             @expression(EP, eMinCapResDCDis[mincap = 1:inputs["NumberOfMinCapReqs"]], 
-                sum(by_rid(y,:EtaInverter)*EP[:eTotalCapDischarge_DC][y] for y in intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+                sum(EP[:eTotalCapDischarge_DC][y] for y in intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
 		    EP[:eMinCapRes] += eMinCapResDCDis
         end
 
@@ -228,7 +228,7 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
         if !isempty(inputs["VS_SYM_DC"])
             @expression(EP, eMinCapResDCStor[mincap = 1:inputs["NumberOfMinCapReqs"]], 
-                sum(by_rid(y,:Power_to_Energy_DC)*by_rid(y,:EtaInverter)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+                sum(by_rid(y,:Power_to_Energy_DC)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MinCapTagStor_$mincap")].== 1),:][!,:R_ID])))
 		    EP[:eMinCapRes] += eMinCapResDCStor
         end
     end
@@ -251,7 +251,7 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
         if !isempty(inputs["VS_ASYM_DC_DISCHARGE"])
             @expression(EP, eMaxCapResDCDis[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
-                sum(by_rid(y,:EtaInverter)*EP[:eTotalCapDischarge_DC][y] for y in intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+                sum(EP[:eTotalCapDischarge_DC][y] for y in intersect(inputs["VS_ASYM_DC_DISCHARGE"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
 		    EP[:eMaxCapRes] += eMaxCapResDCDis
         end
 
@@ -263,7 +263,7 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
         if !isempty(inputs["VS_SYM_DC"])
             @expression(EP, eMaxCapResDCStor[mincap = 1:inputs["NumberOfMaxCapReqs"]], 
-                sum(by_rid(y,:Power_to_Energy_DC)*by_rid(y,:EtaInverter)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
+                sum(by_rid(y,:Power_to_Energy_DC)*EP[:eTotalCap_STOR][y] for y in intersect(inputs["VS_SYM_DC"], dfVRE_STOR[(dfVRE_STOR[!,Symbol("MaxCapTagStor_$mincap")].== 1),:][!,:R_ID])))
 		    EP[:eMaxCapRes] += eMaxCapResDCStor
         end
     end
