@@ -1204,12 +1204,12 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
     if !isempty(VS_SYM_DC)
         # Constraint 4: Charging + Discharging DC Maximum: see main module because capacity reserve margin/operating reserves may alter constraint
         @expression(EP, eChargeDischargeMaxDC[y in VS_SYM_DC, t=1:T],
-            EP[:vP_DC_DISCHARGE][y,t]/by_rid(y,:Eff_Down_DC) + by_rid(y,:Eff_Up_DC)*EP[:vP_DC_CHARGE][y,t])
+            EP[:vP_DC_DISCHARGE][y,t] + EP[:vP_DC_CHARGE][y,t])
     end
     if !isempty(VS_SYM_AC)
         # Constraint 4: Charging + Discharging AC Maximum: see main module because capacity reserve margin/operating reserves may alter constraint
         @expression(EP, eChargeDischargeMaxAC[y in VS_SYM_AC, t=1:T],
-            EP[:vP_AC_DISCHARGE][y,t]/by_rid(y,:Eff_Down_AC) + by_rid(y,:Eff_Up_AC)*EP[:vP_AC_CHARGE][y,t])
+            EP[:vP_AC_DISCHARGE][y,t] + EP[:vP_AC_CHARGE][y,t])
     end
 
     ### ASYMMETRIC RESOURCE MODULE ###
@@ -2002,12 +2002,12 @@ function vre_stor_capres!(EP::Model, inputs::Dict, setup::Dict)
             EP[:eVreStorMaxChargingAC][y,t] += vCAPRES_AC_CHARGE[y,t]
         end
         for y in VS_SYM_DC
-            EP[:eChargeDischargeMaxDC][y,t] += (vCAPRES_DC_DISCHARGE[y,t]/by_rid(y,:Eff_Down_DC) 
-                + by_rid(y,:Eff_Up_DC)*vCAPRES_DC_CHARGE[y,t])
+            EP[:eChargeDischargeMaxDC][y,t] += (vCAPRES_DC_DISCHARGE[y,t]
+                + vCAPRES_DC_CHARGE[y,t])
         end
         for y in VS_SYM_AC
-            EP[:eChargeDischargeMaxAC][y,t] += (vCAPRES_AC_DISCHARGE[y,t]/by_rid(y,:Eff_Down_AC) 
-                + by_rid(y,:Eff_Up_AC)*vCAPRES_AC_CHARGE[y,t])
+            EP[:eChargeDischargeMaxAC][y,t] += (vCAPRES_AC_DISCHARGE[y,t]
+                + vCAPRES_AC_CHARGE[y,t])
         end
     end
 
@@ -2372,19 +2372,19 @@ function vre_stor_reserves!(EP::Model, inputs::Dict, setup::Dict)
         end
 
         for y in VS_SYM_DC_REG
-            EP[:eChargeDischargeMaxDC][y,t] += (vREG_DC_Discharge[y,t]/by_rid(y,:Eff_Down_DC)
-                + by_rid(y,:Eff_Up_DC)*vREG_DC_Charge[y,t])
+            EP[:eChargeDischargeMaxDC][y,t] += (vREG_DC_Discharge[y,t]
+                + vREG_DC_Charge[y,t])
         end
         for y in VS_SYM_DC_RSV
-            EP[:eChargeDischargeMaxDC][y,t] += vRSV_DC_Discharge[y,t]/by_rid(y,:Eff_Down_DC)
+            EP[:eChargeDischargeMaxDC][y,t] += vRSV_DC_Discharge[y,t]
         end
 
         for y in VS_SYM_AC_REG
-            EP[:eChargeDischargeMaxAC][y,t] += (vREG_AC_Discharge[y,t]/by_rid(y,:Eff_Down_AC)
-                + by_rid(y,:Eff_Up_AC)*vREG_AC_Charge[y,t])
+            EP[:eChargeDischargeMaxAC][y,t] += (vREG_AC_Discharge[y,t]
+                + vREG_AC_Charge[y,t])
         end
         for y in VS_SYM_AC_RSV
-            EP[:eChargeDischargeMaxAC][y,t] += vRSV_AC_Discharge[y,t]/by_rid(y,:Eff_Down_AC)
+            EP[:eChargeDischargeMaxAC][y,t] += vRSV_AC_Discharge[y,t]
         end
 
         for y in VS_ASYM_DC_DISCHARGE_REG
