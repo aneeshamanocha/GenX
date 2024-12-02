@@ -1,19 +1,3 @@
-"""
-GenX: An Configurable Capacity Expansion Model
-Copyright (C) 2021,  Massachusetts Institute of Technology
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-A complete copy of the GNU General Public License v2 (GPLv2) is available
-in LICENSE.txt.  Users uncompressing this from an archive may not have
-received this license file.  If not, see <http://www.gnu.org/licenses/>.
-"""
-
 @doc raw"""
 	must_run!(EP::Model, inputs::Dict, setup::Dict)
 
@@ -29,40 +13,41 @@ For must-run resources ($y\in \mathcal{MR}$) output in each time period $t$ must
 ```
 """
 function must_run!(EP::Model, inputs::Dict, setup::Dict)
+    println("Must-Run Resources Module")
 
-	println("Must-Run Resources Module")
+    gen = inputs["RESOURCES"]
 
-	dfGen = inputs["dfGen"]
+    T = inputs["T"]     # Number of time steps (hours)
+    Z = inputs["Z"]     # Number of zones
+    G = inputs["G"] # Number of generators
 
-	T = inputs["T"]     # Number of time steps (hours)
-	Z = inputs["Z"]     # Number of zones
-	G = inputs["G"] 	# Number of generators
+    MUST_RUN = inputs["MUST_RUN"]
+    CapacityReserveMargin = setup["CapacityReserveMargin"]
 
-	MUST_RUN = inputs["MUST_RUN"]
-	CapacityReserveMargin = setup["CapacityReserveMargin"]
+    ### Expressions ###
 
-	### Expressions ###
+    ## Power Balance Expressions ##
 
-	## Power Balance Expressions ##
+    @expression(EP, ePowerBalanceNdisp[t = 1:T, z = 1:Z],
+        sum(EP[:vP][y, t] for y in intersect(MUST_RUN, resources_in_zone_by_rid(gen, z))))
+    add_similar_to_expression!(EP[:ePowerBalance], ePowerBalanceNdisp)
 
-	@expression(EP, ePowerBalanceNdisp[t=1:T, z=1:Z],
-		sum(EP[:vP][y,t] for y in intersect(MUST_RUN, dfGen[dfGen[!,:Zone].==z, :R_ID])))
+    # Capacity Reserves Margin policy
+    if CapacityReserveMargin > 0
+        @expression(EP,
+            eCapResMarBalanceMustRun[res = 1:inputs["NCapacityReserveMargin"], t = 1:T],
+            sum(derating_factor(gen[y], tag = res) * EP[:eTotalCap][y] *
+                inputs["pP_Max"][y, t] for y in MUST_RUN))
+        add_similar_to_expression!(EP[:eCapResMarBalance], eCapResMarBalanceMustRun)
+    end
 
-	EP[:ePowerBalance] += ePowerBalanceNdisp
+    ### Constratints ###
 
-	# Capacity Reserves Margin policy
-	if CapacityReserveMargin > 0
-		@expression(EP, eCapResMarBalanceMustRun[res=1:inputs["NCapacityReserveMargin"], t=1:T], sum(dfGen[y,Symbol("CapRes_$res")] * EP[:eTotalCap][y] * inputs["pP_Max"][y,t]  for y in MUST_RUN))
-		EP[:eCapResMarBalance] += eCapResMarBalanceMustRun
-	end
-
-	### Constratints ###
-
-	@constraint(EP, [y in MUST_RUN, t=1:T], EP[:vP][y,t] == inputs["pP_Max"][y,t]*EP[:eTotalCap][y])
-	##CO2 Polcy Module Must Run Generation by zone
-	@expression(EP, eGenerationByMustRun[z=1:Z, t=1:T], # the unit is GW
-		sum(EP[:vP][y,t] for y in intersect(MUST_RUN, dfGen[dfGen[!,:Zone].==z, :R_ID]))
-	)
-	EP[:eGenerationByZone] += eGenerationByMustRun
-
+    @constraint(EP,
+        [y in MUST_RUN, t = 1:T],
+        EP[:vP][y, t]==inputs["pP_Max"][y, t] * EP[:eTotalCap][y])
+    ##CO2 Polcy Module Must Run Generation by zone
+    @expression(EP, eGenerationByMustRun[z = 1:Z, t = 1:T], # the unit is GW
+        sum(EP[:vP][y, t] for y in intersect(MUST_RUN, resources_in_zone_by_rid(gen, z))))
+    add_similar_to_expression!(EP[:eGenerationByZone], eGenerationByMustRun)
 end

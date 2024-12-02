@@ -1,19 +1,3 @@
-"""
-GenX: An Configurable Capacity Expansion Model
-Copyright (C) 2021,  Massachusetts Institute of Technology
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-A complete copy of the GNU General Public License v2 (GPLv2) is available
-in LICENSE.txt.  Users uncompressing this from an archive may not have
-received this license file.  If not, see <http://www.gnu.org/licenses/>.
-"""
-
 @doc raw"""
 	generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes,modeloutput = nothing)
 
@@ -58,7 +42,7 @@ The seventh summation represents the total cost of not meeting hourly operating 
 
 The eighth summation corresponds to the startup costs incurred by technologies to which unit commitment decisions apply (e.g. $y \in \mathcal{UC}$), equal to the cost of start-up, $\pi^{START}_{y,z}$, times the number of startup events, $\chi_{y,z,t}$, for the cluster of units in each zone and time step (weighted by $\omega_t$).
 
-The last term corresponds to the transmission reinforcement or construction costs, for each transmission line in the model. Transmission reinforcement costs are equal to the sum across all lines of the product between the transmission reinforcement/construction cost, $pi^{TCAP}_{l}$, times the additional transmission capacity variable, $\bigtriangleup\varphi^{max}_{l}$. Note that fixed O\&M and replacement capital costs (depreciation) for existing transmission capacity is treated as a sunk cost and not included explicitly in the GenX objective function.
+The last term corresponds to the transmission reinforcement or construction costs, for each transmission line in the model. Transmission reinforcement costs are equal to the sum across all lines of the product between the transmission reinforcement/construction cost, $\pi^{TCAP}_{l}$, times the additional transmission capacity variable, $\bigtriangleup\varphi^{max}_{l}$. Note that fixed O\&M and replacement capital costs (depreciation) for existing transmission capacity is treated as a sunk cost and not included explicitly in the GenX objective function.
 
 In summary, the objective function can be understood as the minimization of costs associated with five sets of different decisions: (1) where and how to invest on capacity, (2) how to dispatch or operate that capacity, (3) which consumer demand segments to serve or curtail, (4) how to cycle and commit thermal units subject to unit commitment decisions, (5) and where and how to invest in additional transmission network capacity to increase power transfer capacity between zones. Note however that each of these components are considered jointly and the optimization is performed over the whole problem at once as a monolithic co-optimization problem.
 
@@ -75,157 +59,211 @@ The power balance constraint of the model ensures that electricity demand is met
 \end{aligned}
 ```
 
+# Arguments
+- `setup::Dict`: Dictionary containing the settings for the model.
+- `inputs::Dict`: Dictionary containing the inputs for the model.
+- `OPTIMIZER::MOI.OptimizerWithAttributes`: The optimizer to use for solving the model.
+
+# Returns
+- `Model`: The model object containing the entire optimization problem model to be solved by solve_model.jl
 """
+function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithAttributes)
+    T = inputs["T"]     # Number of time steps (hours)
+    Z = inputs["Z"]     # Number of zones
 
-## generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes)
-################################################################################
-##
-## description: Sets up and solves constrained optimization model of electricity
-## system capacity expansion and operation problem and extracts solution variables
-## for later processing
-##
-## returns: Model EP object containing the entire optimization problem model to be solved by SolveModel.jl
-##
-################################################################################
-function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes)
+    ## Start pre-solve timer
+    presolver_start_time = time()
 
-	T = inputs["T"]     # Number of time steps (hours)
-	Z = inputs["Z"]     # Number of zones
+    # Generate Energy Portfolio (EP) Model
+    EP = Model(OPTIMIZER)
+    set_string_names_on_creation(EP, Bool(setup["EnableJuMPStringNames"]))
 
-	## Start pre-solve timer
-	presolver_start_time = time()
+    # Initialize Power Balance Expression
+    # Expression for "baseline" power balance constraint
+    create_empty_expression!(EP, :ePowerBalance, (T, Z))
 
-	# Generate Energy Portfolio (EP) Model
-	EP = Model(OPTIMIZER)
+    # Initialize Objective Function Expression
+    EP[:eObj] = AffExpr(0.0)
 
-	# Introduce dummy variable fixed to zero to ensure that expressions like eTotalCap,
-	# eTotalCapCharge, eTotalCapEnergy and eAvail_Trans_Cap all have a JuMP variable
-	@variable(EP, vZERO == 0);
+    create_empty_expression!(EP, :eGenerationByZone, (Z, T))
 
-	# Initialize Power Balance Expression
-	# Expression for "baseline" power balance constraint
-	@expression(EP, ePowerBalance[t=1:T, z=1:Z], 0)
+    # Energy losses related to technologies
+    create_empty_expression!(EP, :eELOSSByZone, Z)
 
-	# Initialize Objective Function Expression
-	@expression(EP, eObj, 0)
+    # Initialize Capacity Reserve Margin Expression
+    if setup["CapacityReserveMargin"] > 0
+        create_empty_expression!(EP,
+            :eCapResMarBalance,
+            (inputs["NCapacityReserveMargin"], T))
+    end
 
+    # Energy Share Requirement
+    if setup["EnergyShareRequirement"] >= 1
+        create_empty_expression!(EP, :eESR, inputs["nESR"])
+    end
 
-	#@expression(EP, :eCO2Cap[cap=1:inputs["NCO2Cap"]], 0)
-	@expression(EP, eGenerationByZone[z=1:Z, t=1:T], 0)
-	# Initialize Capacity Reserve Margin Expression
-	if setup["CapacityReserveMargin"] > 0
-		@expression(EP, eCapResMarBalance[res=1:inputs["NCapacityReserveMargin"], t=1:T], 0)
-	end
+    # Hourly Matching Requirement
+    if setup["HourlyMatching"] == 1
+        create_empty_expression!(EP, :eHM, (T, Z))
+    end
 
-	# Energy Share Requirement
-	if setup["EnergyShareRequirement"] >= 1
-		@expression(EP, eESR[ESR=1:inputs["nESR"]], 0)
-	end
+    if setup["MinCapReq"] == 1
+        create_empty_expression!(EP, :eMinCapRes, inputs["NumberOfMinCapReqs"])
+    end
 
-	if (setup["MinCapReq"] == 1)
-		@expression(EP, eMinCapRes[mincap = 1:inputs["NumberOfMinCapReqs"]], 0)
-	end
+    if setup["MaxCapReq"] == 1
+        create_empty_expression!(EP, :eMaxCapRes, inputs["NumberOfMaxCapReqs"])
+    end
 
-	# Infrastructure
-	discharge!(EP, inputs, setup)
+    if setup["HydrogenMinimumProduction"] > 0
+        create_empty_expression!(EP, :eH2DemandRes, inputs["NumberOfH2DemandReqs"])
+    end
 
-	non_served_energy!(EP, inputs, setup)
+    # Infrastructure
+    discharge!(EP, inputs, setup)
 
-	investment_discharge!(EP, inputs, setup)
+    non_served_energy!(EP, inputs, setup)
 
-	if setup["UCommit"] > 0
-		ucommit!(EP, inputs, setup)
-	end
+    investment_discharge!(EP, inputs, setup)
 
-	emissions!(EP, inputs)
+    if setup["UCommit"] > 0
+        ucommit!(EP, inputs, setup)
+    end
 
-	if setup["Reserves"] > 0
-		reserves!(EP, inputs, setup)
-	end
+    fuel!(EP, inputs, setup)
 
-	if Z > 1
-		transmission!(EP, inputs, setup)
-	end
+    co2!(EP, inputs)
 
-	# Technologies
-	# Model constraints, variables, expression related to dispatchable renewable resources
+    if setup["OperationalReserves"] > 0
+        operational_reserves!(EP, inputs, setup)
+    end
 
-	if !isempty(inputs["VRE"])
-		curtailable_variable_renewable!(EP, inputs, setup)
-	end
+    if Z > 1
+        investment_transmission!(EP, inputs, setup)
+        transmission!(EP, inputs, setup)
+    end
 
-	# Model constraints, variables, expression related to non-dispatchable renewable resources
-	if !isempty(inputs["MUST_RUN"])
-		must_run!(EP, inputs, setup)
-	end
+    if Z > 1 && setup["DC_OPF"] != 0
+        dcopf_transmission!(EP, inputs, setup)
+    end
 
-	# Model constraints, variables, expression related to energy storage modeling
-	if !isempty(inputs["STOR_ALL"])
-		storage!(EP, inputs, setup)
-	end
+    # Technologies
+    # Model constraints, variables, expression related to dispatchable renewable resources
 
-	# Model constraints, variables, expression related to reservoir hydropower resources
-	if !isempty(inputs["HYDRO_RES"])
-		hydro_res!(EP, inputs, setup)
-	end
+    if !isempty(inputs["VRE"])
+        curtailable_variable_renewable!(EP, inputs, setup)
+    end
 
-	# Model constraints, variables, expression related to reservoir hydropower resources with long duration storage
-	if setup["OperationWrapping"] == 1 && !isempty(inputs["STOR_HYDRO_LONG_DURATION"])
-		hydro_inter_period_linkage!(EP, inputs)
-	end
+    # Model constraints, variables, expression related to non-dispatchable renewable resources
+    if !isempty(inputs["MUST_RUN"])
+        must_run!(EP, inputs, setup)
+    end
 
-	# Model constraints, variables, expression related to demand flexibility resources
-	if !isempty(inputs["FLEX"])
-		flexible_demand!(EP, inputs, setup)
-	end
-	# Model constraints, variables, expression related to thermal resource technologies
-	if !isempty(inputs["THERM_ALL"])
-		thermal!(EP, inputs, setup)
-	end
+    # Model constraints, variables, expression related to energy storage modeling
+    if !isempty(inputs["STOR_ALL"])
+        storage!(EP, inputs, setup)
+    end
 
-	# Model constraints, variables, expression related to retrofit technologies
-	if !isempty(inputs["RETRO"])
-		EP = retrofit(EP, inputs)
-	end
+    # Model constraints, variables, expression related to reservoir hydropower resources
+    if !isempty(inputs["HYDRO_RES"])
+        hydro_res!(EP, inputs, setup)
+    end
 
-	# Policies
-	# CO2 emissions limits
-	co2_cap!(EP, inputs, setup)
+    # Model constraints, variables, expression related to reservoir hydropower resources with long duration storage
+    if inputs["REP_PERIOD"] > 1 && !isempty(inputs["STOR_HYDRO_LONG_DURATION"])
+        hydro_inter_period_linkage!(EP, inputs)
+    end
 
-	# Endogenous Retirements
-	if setup["MultiStage"] > 0
-		endogenous_retirement!(EP, inputs, setup)
-	end
+    # Model constraints, variables, expression related to demand flexibility resources
+    if !isempty(inputs["FLEX"])
+        flexible_demand!(EP, inputs, setup)
+    end
 
-	# Energy Share Requirement
-	if setup["EnergyShareRequirement"] >= 1
-		energy_share_requirement!(EP, inputs, setup)
-	end
+    # Model constraints, variables, expression related to thermal resource technologies
+    if !isempty(inputs["THERM_ALL"])
+        thermal!(EP, inputs, setup)
+    end
 
-	#Capacity Reserve Margin
-	if setup["CapacityReserveMargin"] > 0
-		cap_reserve_margin!(EP, inputs, setup)
-	end
+    # Model constraints, variables, expression related to retrofit technologies
+    if !isempty(inputs["RETROFIT_OPTIONS"])
+        EP = retrofit(EP, inputs)
+    end
 
-	if (setup["MinCapReq"] == 1)
-		minimum_capacity_requirement!(EP, inputs, setup)
-	end
+    # Model constraints, variables, expressions related to the co-located VRE-storage resources
+    if !isempty(inputs["VRE_STOR"])
+        vre_stor!(EP, inputs, setup)
+    end
 
-	## Define the objective function
-	@objective(EP,Min,EP[:eObj])
+    # Model constraints, variables, expressions related to telectrolyzers
+    if !isempty(inputs["ELECTROLYZER"]) ||
+       (!isempty(inputs["VRE_STOR"]) && !isempty(inputs["VS_ELEC"]))
+        electrolyzer!(EP, inputs, setup)
+    end
+    # Policies
 
-	## Power balance constraints
-	# demand = generation + storage discharge - storage charge - demand deferral + deferred demand satisfaction - demand curtailment (NSE)
-	#          + incoming power flows - outgoing power flows - flow losses - charge of heat storage + generation from NACC
-	@constraint(EP, cPowerBalance[t=1:T, z=1:Z], EP[:ePowerBalance][t,z] == inputs["pD"][t,z])
+    if setup["OperationalReserves"] > 0
+        operational_reserves_constraints!(EP, inputs)
+    end
 
-	## Record pre-solver time
-	presolver_time = time() - presolver_start_time
-	if setup["PrintModel"] == 1
-		filepath = joinpath(pwd(), "YourModel.lp")
-		JuMP.write_to_file(EP, filepath)
-		println("Model Printed")
-    	end
+    # CO2 emissions limits
+    if setup["CO2Cap"] > 0
+        co2_cap!(EP, inputs, setup)
+    end
+
+    # Endogenous Retirements
+    if setup["MultiStage"] > 0
+        endogenous_retirement!(EP, inputs, setup)
+    end
+
+    # Energy Share Requirement
+    if setup["EnergyShareRequirement"] >= 1
+        energy_share_requirement!(EP, inputs, setup)
+    end
+
+    # Energy Share Requirement
+    if setup["HourlyMatching"] == 1
+        hourly_matching!(EP, inputs)
+    end
+
+    #Capacity Reserve Margin
+    if setup["CapacityReserveMargin"] > 0
+        cap_reserve_margin!(EP, inputs, setup)
+    end
+
+    if (setup["MinCapReq"] == 1)
+        minimum_capacity_requirement!(EP, inputs, setup)
+    end
+
+    if setup["MaxCapReq"] == 1
+        maximum_capacity_requirement!(EP, inputs, setup)
+    end
+
+    # Hydrogen demand limits
+    if setup["HydrogenMinimumProduction"] > 0
+        hydrogen_demand!(EP, inputs, setup)
+    end
+
+    if setup["ModelingToGenerateAlternatives"] == 1
+        mga!(EP, inputs, setup)
+    end
+
+    ## Define the objective function
+    @objective(EP, Min, setup["ObjScale"]*EP[:eObj])
+
+    ## Power balance constraints
+    # demand = generation + storage discharge - storage charge - demand deferral + deferred demand satisfaction - demand curtailment (NSE)
+    #          + incoming power flows - outgoing power flows - flow losses - charge of heat storage + generation from NACC
+    @constraint(EP,
+        cPowerBalance[t = 1:T, z = 1:Z],
+        EP[:ePowerBalance][t, z]==inputs["pD"][t, z])
+
+    ## Record pre-solver time
+    presolver_time = time() - presolver_start_time
+    if setup["PrintModel"] == 1
+        filepath = joinpath(pwd(), "YourModel.lp")
+        JuMP.write_to_file(EP, filepath)
+        println("Model Printed")
+    end
 
     return EP
 end

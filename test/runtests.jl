@@ -1,34 +1,68 @@
-"""
-GenX: An Configurable Capacity Expansion Model
-Copyright (C) 2021,  Massachusetts Institute of Technology
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-A complete copy of the GNU General Public License v2 (GPLv2) is available
-in LICENSE.txt.  Users uncompressing this from an archive may not have
-received this license file.  If not, see <http://www.gnu.org/licenses/>.
-"""
-
 using GenX
 using Test
-#These are just some dummy sample test; The full-grown unit testing module is under active development currently
-@testset "GenX.jl" begin
-    @test simple_operation(2.0, 3.0) == 5
-    @test simple_operation(2.1, 3.1)==5.2
-    @test simple_operation(21.0, 31.0)== 52.0
-    @test simple_operation(73.0, 35.0)== 108.0
-    #=
-    @test isa(inputs_gen["THERM_COMMIT"], Int64)
-    @test isa(inputs_gen["THERM_NO_COMMIT"], Int64)
-    @test isa(inputs_gen["HYDRO_RES"], Int64)
-    @test isa(inputs_gen["HYDRO_RES_KNOWN_CAP"], Int64)
-    @test isa(inputs_gen["FLEX"], Int64)
-    @test isa(inputs_gen["MUST_RUN"], Int64)
-    @test isa(inputs_gen["VRE"], Int64)
-    =#
+using Logging
+
+include("utilities.jl")
+
+@testset "Expr manipulation" begin
+    include("expression_manipulation_test.jl")
 end
+
+if VERSION ≥ v"1.7"
+    @testset "Resource loading" begin
+        include("test_load_resource_data.jl")
+    end
+end
+
+# Test GenX modules
+@testset verbose=true "GenX modules" begin
+    @testset "Three zones" begin
+        include("test_threezones.jl")
+    end
+
+    @testset "TDR" begin
+        include("test_time_domain_reduction.jl")
+    end
+
+    @testset "Piecewise Fuel" begin
+        include("test_piecewisefuel.jl")
+    end
+
+    @testset "VRE_STOR" begin
+        include("test_VRE_storage.jl")
+    end
+
+    @testset "Electrolyzer" begin
+        include("test_electrolyzer.jl")
+    end
+
+    @testset "Multi Stage" begin
+        include("test_multistage.jl")
+    end
+
+    @testset "DCOPF" begin
+        include("test_DCOPF.jl")
+    end
+
+    @testset "Multi Fuels" begin
+        include("test_multifuels.jl")
+    end
+
+    @testset "Compute Conflicts" begin
+        include("test_compute_conflicts.jl")
+    end
+
+    @testset "Retrofit" begin
+        include("test_retrofit.jl")
+    end
+end
+
+# Test writing outputs
+@testset "Writing outputs " begin
+    for test_file in filter!(x -> endswith(x, ".jl"), readdir("writing_outputs"))
+        include("writing_outputs/$test_file")
+    end
+end
+
+# Remove temporary files
+isdir(results_path) && rm(results_path, force = true, recursive = true)
