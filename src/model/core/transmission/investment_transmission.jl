@@ -29,6 +29,7 @@ function investment_transmission!(EP::Model, inputs::Dict, setup::Dict)
     println("Investment Transmission Module")
 
     L = inputs["L"]     # Number of transmission lines
+    Z = inputs["Z"]     # Number of zones
     NetworkExpansion = setup["NetworkExpansion"]
     MultiStage = setup["MultiStage"]
 
@@ -111,5 +112,144 @@ function investment_transmission!(EP::Model, inputs::Dict, setup::Dict)
             vNEW_TRANS_CAP[l]<=inputs["pMax_Line_Reinforcement"][l])
     end
     #END network expansion contraints
+
+end
+
+function investment_transmission_planning_hourly!(EP::Model, inputs::Dict, setup::Dict)
+    println("Investment Transmission Modul for Spatial Benders - Hourly Matching'")
+
+    L = inputs["L"]     # Number of transmission lines
+    Z = inputs["Z"]     # Number of zones
+    T = inputs["T"]     # Number of time slots
+    NetworkExpansion = setup["NetworkExpansion"]
+
+    # LINKING VARIABLES: master determines hourly flow #
+    @variable(EP, vFlowHourly[l=1:L, t=1:T])
+
+    if NetworkExpansion == 1
+        # Network lines and zones that are expandable have non-negative maximum reinforcement inputs
+        EXPANSION_LINES = inputs["EXPANSION_LINES"]
+    end
+
+    ### Variables ###
+
+    if NetworkExpansion == 1
+        # Transmission network capacity reinforcements per line
+        @variable(EP, vNEW_TRANS_CAP[l in EXPANSION_LINES]>=0)
+    end
+
+    ### Expressions ###
+
+    @expression(EP, eTransMax[l = 1:L], inputs["pTrans_Max"][l])
+
+    ## Transmission power flow and loss related expressions:
+    # Total availabile maximum transmission capacity is the sum of existing maximum transmission capacity plus new transmission capacity
+    if NetworkExpansion == 1
+        @expression(EP, eAvail_Trans_Cap[l = 1:L],
+            if l in EXPANSION_LINES
+                eTransMax[l] + vNEW_TRANS_CAP[l]
+            else
+                eTransMax[l]
+            end)
+    else
+        @expression(EP, eAvail_Trans_Cap[l = 1:L], eTransMax[l])
+    end
+
+    ## Objective Function Expressions ##
+
+    if NetworkExpansion == 1
+        @expression(EP,
+            eTotalCNetworkExp,
+            sum(vNEW_TRANS_CAP[l] * inputs["pC_Line_Reinforcement"][l]
+            for l in EXPANSION_LINES))
+        add_to_expression!(EP[:eObj], eTotalCNetworkExp)
+    end
+
+    ## End Objective Function Expressions ##
+
+    ### Constraints ###
+    # If network expansion is used:
+    if NetworkExpansion == 1
+         @constraint(EP,
+            cMaxLineReinforcement[l in EXPANSION_LINES],
+            vNEW_TRANS_CAP[l]<=inputs["pMax_Line_Reinforcement"][l])
+    end
+
+    # Fixed flow constraints
+
+    # Maximum power flows, power flow on each transmission line cannot exceed maximum capacity of the line at any hour "t"
+    @constraints(EP,
+        begin
+            cMaxFlow_out[l = 1:L, t = 1:T], vFlowHourly[l, t] <= EP[:eAvail_Trans_Cap][l]
+            cMaxFlow_in[l = 1:L, t = 1:T], vFlowHourly[l, t] >= -EP[:eAvail_Trans_Cap][l]
+        end)
+
+end
+
+function investment_transmission_planning_budget!(EP::Model, inputs::Dict, setup::Dict)
+    println("Investment Transmission Module for Spatial Benders - Budget Based'")
+
+    L = inputs["L"]     # Number of transmission lines
+    Z = inputs["Z"]     # Number of zones
+    T = inputs["T"]     # Number of time slots
+    NetworkExpansion = setup["NetworkExpansion"]
+
+    @variable(EP, vFlowBudget[z=1:Z] >= 0)
+    @constraint(EP, cFlowConstraint[z=1:Z], vFlowBudget[z] <= 1350)
+
+    #@expression(EP, eFlowBudgetCost, sum(vFlowBudget[z] * 100.0 for z in 1:Z))
+    #add_to_expression!(EP[:eObj], eFlowBudgetCost)
+
+
+    if NetworkExpansion == 1
+        # Network lines and zones that are expandable have non-negative maximum reinforcement inputs
+        EXPANSION_LINES = inputs["EXPANSION_LINES"]
+    end
+
+    ### Variables ###
+
+    if NetworkExpansion == 1
+        # Transmission network capacity reinforcements per line
+        @variable(EP, vNEW_TRANS_CAP[l in EXPANSION_LINES]>=0)
+    end
+
+    ### Expressions ###
+
+    @expression(EP, eTransMax[l = 1:L], inputs["pTrans_Max"][l])
+
+    ## Transmission power flow and loss related expressions:
+    # Total availabile maximum transmission capacity is the sum of existing maximum transmission capacity plus new transmission capacity
+    if NetworkExpansion == 1
+        @expression(EP, eAvail_Trans_Cap[l = 1:L],
+            if l in EXPANSION_LINES
+                eTransMax[l] + vNEW_TRANS_CAP[l]
+            else
+                eTransMax[l]
+            end)
+    else
+        @expression(EP, eAvail_Trans_Cap[l = 1:L], eTransMax[l])
+    end
+
+    ## Objective Function Expressions ##
+
+    if NetworkExpansion == 1
+        @expression(EP,
+            eTotalCNetworkExp,
+            sum(vNEW_TRANS_CAP[l] * inputs["pC_Line_Reinforcement"][l]
+            for l in EXPANSION_LINES))
+        add_to_expression!(EP[:eObj], eTotalCNetworkExp)
+    end
+
+    ## End Objective Function Expressions ##
+
+    ### Constraints ###
+    # If network expansion is used:
+    if NetworkExpansion == 1
+         @constraint(EP,
+            cMaxLineReinforcement[l in EXPANSION_LINES],
+            vNEW_TRANS_CAP[l]<=inputs["pMax_Line_Reinforcement"][l])
+    end
+
+    # Fixed flow constraints (?)
 
 end

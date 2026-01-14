@@ -595,6 +595,9 @@ resource_type_mga(r::AbstractResource) = r.resource_type
 zone_id(r::AbstractResource) = r.zone
 zone_id(rs::Vector{T}) where {T <: AbstractResource} = zone_id.(rs)
 
+oz_id(r::AbstractResource) = r.Zone
+oz_id(rs::Vector{T}) where {T <: AbstractResource} = oz_id.(rs)
+
 # getter for boolean attributes (true or false) with validation
 function new_build(r::AbstractResource)
     validate_boolean_attribute(r, :new_build)
@@ -1186,6 +1189,14 @@ Find R_ID's of resources in a zone.
 """
 function resources_in_zone_by_rid(rs::Vector{<:AbstractResource}, zone::Int)
     return resource_id.(rs[zone_id.(rs) .== zone])
+end
+
+@doc raw"""
+    resources_in_zone_by_rid(rs::Vector{<:AbstractResource}, zone::Int)
+Find R_ID's of resources in a zone.
+"""
+function resources_in_oz_by_rid(rs::Vector{<:AbstractResource}, zone::Int)
+    return resource_id.(rs[oz_id.(rs) .== zone])
 end
 
 @doc raw"""

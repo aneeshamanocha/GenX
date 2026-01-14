@@ -41,6 +41,7 @@ function default_settings()
         "ObjScale" => 1,
         "CoolingHeatingHourlyMatching" => 0,
         "Benders"=>0,
+        "Benders_spatial"=>0, 
         "LDES_Feasible"=>1,
         "IntegerInvestments"=>0)
 end
@@ -100,20 +101,21 @@ function validate_settings!(settings::Dict{Any, Any})
         settings["EnableJuMPStringNames"] = 1
     end
 
-    if settings["EnableJuMPStringNames"] == 0 && settings["Benders"] == 1
+    if settings["EnableJuMPStringNames"] == 0 && (settings["Benders"] == 1 || settings["Benders_spatial"] == 1)
         settings["EnableJuMPStringNames"] = 1
     end
     
-    if settings["MultiStage"] == 1 && settings["Benders"] == 1
+    if settings["MultiStage"] == 1 && (settings["Benders"] == 1 || settings["Benders_spatial"] == 1)
         Base.depwarn("""Multistage and Benders are not integrated yet, deactivating Benders.""",
             :validate_settings!, force = true)
-        settings["Benders"] = 0;
+        settings[""] = 0;
     end
 
-    if settings["ModelingToGenerateAlternatives"] == 1 && settings["Benders"] == 1
+    if settings["ModelingToGenerateAlternatives"] == 1 && (settings["Benders"] == 1 || settings["Benders_spatial"] == 1)
         Base.depwarn("""MGA and Benders are not integrated yet, deactivating Benders.""",
             :validate_settings!, force = true)
         settings["Benders"] = 0;
+        settings["Benders_spatial"] = 0;
     end
 
 
@@ -122,53 +124,53 @@ end
 function default_writeoutput()
     Dict{String, Bool}("WriteCosts" => true,
         "WriteCapacity" => true,
-        "WriteCapacityValue" => true,
-        "WriteCapacityFactor" => true,
-        "WriteCharge" => true,
-        "WriteChargingCost" => true,
-        "WriteCO2" => true,
-        "WriteCO2Cap" => true,
-        "WriteCommit" => true,
-        "WriteCurtailment" => true,
-        "WriteEmissions" => true,
-        "WriteEnergyRevenue" => true,
-        "WriteESRPrices" => true,
-        "WriteESRRevenue" => true,
-        "WriteFuelConsumption" => true,
-        "WriteFusion" => true,
-        "WriteHourlyMatchingPrices" => true,
-        "WriteHydrogenPrices" => true,
-        "WriteMaintenance" => true,
-        "WriteMaxCapReq" => true,
-        "WriteMinCapReq" => true,
-        "WriteNetRevenue" => true,
-        "WriteNSE" => true,
+        "WriteCapacityValue" => false,
+        "WriteCapacityFactor" => false,
+        "WriteCharge" => false,
+        "WriteChargingCost" => false,
+        "WriteCO2" => false,
+        "WriteCO2Cap" => false,
+        "WriteCommit" => false,
+        "WriteCurtailment" => false,
+        "WriteEmissions" => false,
+        "WriteEnergyRevenue" => false,
+        "WriteESRPrices" => false,
+        "WriteESRRevenue" => false,
+        "WriteFuelConsumption" => false,
+        "WriteFusion" => false,
+        "WriteHourlyMatchingPrices" => false,
+        "WriteHydrogenPrices" => false,
+        "WriteMaintenance" => false,
+        "WriteMaxCapReq" => false,
+        "WriteMinCapReq" => false,
+        "WriteNetRevenue" => false,
+        "WriteNSE" => false,
         "WriteNWExpansion" => true,
-        "WriteOpWrapLDSdStor" => true,
-        "WriteOpWrapLDSStorInit" => true,
+        "WriteOpWrapLDSdStor" => false,
+        "WriteOpWrapLDSStorInit" => false,
         "WritePower" => true,
-        "WritePowerBalance" => true,
-        "WritePrice" => true,
-        "WriteReg" => true,
-        "WriteReliability" => true,
-        "WriteReserveMargin" => true,
-        "WriteReserveMarginRevenue" => true,
-        "WriteReserveMarginSlack" => true,
-        "WriteReserveMarginWithWeights" => true,
-        "WriteRsv" => true,
-        "WriteShutdown" => true,
-        "WriteStart" => true,
+        "WritePowerBalance" => false,
+        "WritePrice" => false,
+        "WriteReg" => false,
+        "WriteReliability" => false,
+        "WriteReserveMargin" => false,
+        "WriteReserveMarginRevenue" => false,
+        "WriteReserveMarginSlack" => false,
+        "WriteReserveMarginWithWeights" => false,
+        "WriteRsv" => false,
+        "WriteShutdown" => false,
+        "WriteStart" => false,
         "WriteStatus" => true,
-        "WriteStorage" => true,
-        "WriteStorageDual" => true,
-        "WriteSubsidyRevenue" => true,
-        "WriteTimeWeights" => true,
+        "WriteStorage" => false,
+        "WriteStorageDual" => false,
+        "WriteSubsidyRevenue" => false,
+        "WriteTimeWeights" => false,
         "WriteTransmissionFlows" => true,
-        "WriteTransmissionLosses" => true,
-        "WriteVirtualDischarge" => true,
-        "WriteVREStor" => true,
-        "WriteAngles" => true,
-        "WriteUse" => true,)
+        "WriteTransmissionLosses" => false,
+        "WriteVirtualDischarge" => false,
+        "WriteVREStor" => false,
+        "WriteAngles" => false,
+        "WriteUse" => false,)
 end
 
 function configure_writeoutput(output_settings_path::String, settings::Dict)

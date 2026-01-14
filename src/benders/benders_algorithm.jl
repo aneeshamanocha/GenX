@@ -65,7 +65,7 @@ function benders(benders_inputs::Dict{Any,Any},setup::Dict)
 			subop_sol_best = deepcopy(subop_sol);
 			UB = UBnew;
 		end
-
+		
 		print("Updating the planning problem....")
 		time_start_update = time()
 

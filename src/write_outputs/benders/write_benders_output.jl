@@ -16,6 +16,10 @@ function write_benders_output(LB_hist::Vector{Float64}, UB_hist::Vector{Float64}
 	println("Time elapsed for writing capacity is")
 	println(elapsed_time_capacity)
 
+	#println("Flow Budget")
+	#budget = value.(planning_problem[:vFlowBudget])
+	#println(budget)
+
 	
 	if inputs["Z"] > 1
 		if setup["NetworkExpansion"] == 1
@@ -42,12 +46,12 @@ function write_benders_output(LB_hist::Vector{Float64}, UB_hist::Vector{Float64}
     CSV.write(joinpath(outpath, "benders_convergence.csv"),dfConv)
     YAML.write_file(joinpath(outpath, "run_settings.yml"),setup)
 
-    write_co2_emissions_plant(outpath, inputs, setup,
-        collect_distributed_expressions(:eEmissionsByPlant, subproblems))
+    #write_co2_emissions_plant(outpath, inputs, setup,
+    #    collect_distributed_expressions(:eEmissionsByPlant, subproblems))
 
-	write_power(outpath, inputs, setup, collect_distributed_expressions(:vP, subproblems))
+	#write_power(outpath, inputs, setup, collect_distributed_expressions(:vP, subproblems))
 
-    write_charge(outpath, inputs, setup, subproblems)
+    #write_charge(outpath, inputs, setup, subproblems)
 end
 
 function write_co2_emissions_plant(path::AbstractString,

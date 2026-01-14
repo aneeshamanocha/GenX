@@ -1,5 +1,5 @@
 @doc raw""" 
-    co2!(EP::Model, inputs::Dict)
+    co2!(EP::Model, inputs::Dict, setup::Dict)
 
 This function creates expressions to account for CO2 emissions as well as captured and sequestrated 
 CO2 from thermal generators. It also has the capability to model the negative CO2 emissions 
@@ -50,7 +50,7 @@ eEmissionsCaptureByPlant_{g,t} = CO2\_Capture\_Fraction_y * vFuel_{y,t}  * CO2_{
 ```
 
 """
-function co2!(EP::Model, inputs::Dict)
+function co2!(EP::Model, inputs::Dict, setup::Dict)
     println("CO2 Module")
 
     gen = inputs["RESOURCES"]
@@ -72,7 +72,8 @@ function co2!(EP::Model, inputs::Dict)
     # If all the CO2 capture fractions from Generators_data are zeros, the CO2 emissions from thermal generators are determined by fuel consumption times CO2 content per MMBTU 
 
     if isempty(CCS)
-        @expression(EP, eEmissionsByPlant[y = 1:G, t = 1:T],
+        if setup["Benders_spatial"]==0 
+            @expression(EP, eEmissionsByPlant[y = 1:G, t = 1:T],
             if y in SINGLE_FUEL
                 ((1 - biomass(gen[y])) * (EP[:vFuel][y, t] + EP[:vStartFuel][y, t]) *
                  fuel_CO2[fuel(gen[y])])
@@ -81,12 +82,24 @@ function co2!(EP::Model, inputs::Dict)
                      (EP[:vMulFuels][y, i, t] + EP[:vMulStartFuels][y, i, t]) *
                      fuel_CO2[fuel_cols(gen[y], tag = i)]) for i in 1:max_fuels)
             end)
+        else
+            G_indices = inputs["G_indices"]
+            @expression(EP, eEmissionsByPlant[y = G_indices, t = 1:T],
+            if y in SINGLE_FUEL
+                ((1 - biomass(gen[y])) * (EP[:vFuel][y, t] + EP[:vStartFuel][y, t]) *
+                 fuel_CO2[fuel(gen[y])])
+            else
+                sum(((1 - biomass(gen[y])) *
+                     (EP[:vMulFuels][y, i, t] + EP[:vMulStartFuels][y, i, t]) *
+                     fuel_CO2[fuel_cols(gen[y], tag = i)]) for i in 1:max_fuels)
+            end)
+        end
     else
         @info "Using the CO2 module to determine the CO2 emissions of CCS-equipped plants"
         # CO2_Capture_Fraction refers to the CO2 capture rate of CCS equiped power plants at a steady state 
         # CO2_Capture_Fraction_Startup refers to the CO2 capture rate of CCS equiped power plants during startup events
-
-        @expression(EP, eEmissionsByPlant[y = 1:G, t = 1:T],
+        if setup["Benders_spatial"]==0 
+            @expression(EP, eEmissionsByPlant[y = 1:G, t = 1:T],
             if y in SINGLE_FUEL
                 (1 - biomass(gen[y]) - co2_capture_fraction(gen[y])) * EP[:vFuel][y, t] *
                 fuel_CO2[fuel(gen[y])] +
@@ -100,6 +113,22 @@ function co2!(EP::Model, inputs::Dict)
                     EP[:vMulStartFuels][y, i, t] * fuel_CO2[fuel_cols(gen[y], tag = i)]
                 for i in 1:max_fuels)
             end)
+        else
+            @expression(EP, eEmissionsByPlant[y = G_indices, t = 1:T],
+            if y in SINGLE_FUEL
+                (1 - biomass(gen[y]) - co2_capture_fraction(gen[y])) * EP[:vFuel][y, t] *
+                fuel_CO2[fuel(gen[y])] +
+                (1 - biomass(gen[y]) - co2_capture_fraction_startup(gen[y])) *
+                EP[:eStartFuel][y, t] * fuel_CO2[fuel(gen[y])]
+            else
+                sum((1 - biomass(gen[y]) - co2_capture_fraction(gen[y])) *
+                    EP[:vMulFuels][y, i, t] * fuel_CO2[fuel_cols(gen[y], tag = i)]
+                for i in 1:max_fuels) +
+                sum((1 - biomass(gen[y]) - co2_capture_fraction_startup(gen[y])) *
+                    EP[:vMulStartFuels][y, i, t] * fuel_CO2[fuel_cols(gen[y], tag = i)]
+                for i in 1:max_fuels)
+            end)
+        end
 
         # CO2 captured from power plants in "Generators_data.csv"
         @expression(EP, eEmissionsCaptureByPlant[y in CCS, t = 1:T],
@@ -134,7 +163,13 @@ function co2!(EP::Model, inputs::Dict)
     end
 
     # emissions by zone
-    @expression(EP, eEmissionsByZone[z = 1:Z, t = 1:T],
+    if setup["Benders_spatial"]==0
+        @expression(EP, eEmissionsByZone[z = 1:Z, t = 1:T],
         sum(eEmissionsByPlant[y, t] for y in resources_in_zone_by_rid(gen, z)))
+    else
+        G_indices = inputs["G_indices"]
+        @expression(EP, eEmissionsByZone[z = 1:Z, t = 1:T],
+        sum(eEmissionsByPlant[y, t] for y in intersect(G_indices, resources_in_zone_by_rid(gen, z))))
+    end
     return EP
 end

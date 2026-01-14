@@ -83,7 +83,7 @@ function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithA
     # Initialize Objective Function Expression
     EP[:eObj] = AffExpr(0.0)
 
-    if setup["Benders"]==1 && !isempty(inputs["VRE_STOR"])
+    if (setup["Benders"]==1 || setup["Benders_spatial"]>=1) && !isempty(inputs["VRE_STOR"])
         error("Benders not yet supported with VRE-STOR")
     end
 
@@ -153,17 +153,22 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
 
     fuel!(EP, inputs, setup)
 
-    co2!(EP, inputs)
+    co2!(EP, inputs, setup)
 
     if setup["OperationalReserves"] > 0
         operational_reserves!(EP, inputs, setup)
     end
 
-    if Z > 1
+    # EDITED FOR BENDERS' SPATIAL
+    if setup["Benders_spatial"]==1
+        transmission_operations_hourly!(EP, inputs, setup)
+    elseif setup["Benders_spatial"]==2
+        transmission_operations_budget!(EP, inputs, setup)
+    elseif Z > 1
         transmission!(EP, inputs, setup)
     end
 
-    if Z > 1 && setup["DC_OPF"] != 0
+    if Z > 1 && setup["DC_OPF"] != 0 && setup["Benders_spatial"]==0
         dcopf_transmission!(EP, inputs, setup)
     end
 
@@ -189,7 +194,7 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
         storage_all!(EP, inputs, setup)
     
         # Include Long Duration Storage only when modeling representative periods and long-duration storage
-        if setup["Benders"]==1 && !isempty(inputs["STOR_LONG_DURATION"])
+        if setup["Benders"]==1 && !isempty(inputs["STOR_LONG_DURATION"]) && setup["Benders_spatial"] == 0
             long_duration_storage_subperiod!(EP, inputs, setup)
         elseif inputs["REP_PERIOD"] > 1 && !isempty(inputs["STOR_LONG_DURATION"])
             long_duration_storage!(EP, inputs, setup)
@@ -231,7 +236,7 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
     end
 
     # Model constraints, variables, expressions related to the co-located VRE-storage resources
-    if setup["Benders"]==0 && !isempty(inputs["VRE_STOR"])
+    if setup["Benders"]==0 && setup["Benders_spatial"]==0 && !isempty(inputs["VRE_STOR"])
         vre_stor!(EP, inputs, setup)
     end
 
@@ -241,7 +246,7 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
         operational_reserves_constraints!(EP, inputs)
     end
 
-    # CO2 emissions limits
+    # CO2 emissions limits - not touching yet
     if setup["CO2Cap"] > 0
         if setup["Benders"]==1
             co2_cap_subperiod!(EP,inputs,setup)
@@ -250,7 +255,7 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
         end
     end
 
-    # Energy Share Requirement
+    # Energy Share Requirement - no Benders spatial yet
     if setup["EnergyShareRequirement"] >= 1
         if setup["Benders"]==1
             energy_share_requirement_subperiod!(EP,inputs,setup)
@@ -259,7 +264,7 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
         end
     end
 
-    #Capacity Reserve Margin
+    #Capacity Reserve Margin - no Benders spatial yet
     if setup["CapacityReserveMargin"] > 0
         cap_reserve_margin!(EP, inputs, setup)
     end
@@ -267,6 +272,10 @@ function operation_model!(EP::Model,setup::Dict, inputs::Dict)
     ## Power balance constraints
     # demand = generation + storage discharge - storage charge - demand deferral + deferred demand satisfaction - demand curtailment (NSE)
     #          + incoming power flows - outgoing power flows - flow losses - charge of heat storage + generation from NACC
+    @variable(EP, vCurtailment[t = 1:T] >= 0)
+    for t in 1:T
+        add_to_expression!(EP[:ePowerBalance][t, Z], -vCurtailment[t])
+    end
     @constraint(EP,
         cPowerBalance[t = 1:T, z = 1:Z],
         EP[:ePowerBalance][t, z]==inputs["pD"][t, z])
@@ -288,7 +297,13 @@ function planning_model!(EP::Model,setup::Dict, inputs::Dict)
     investment_discharge!(EP, inputs, setup)
 
     if inputs["Z"] > 1
-        investment_transmission!(EP, inputs, setup)
+        if setup["Benders_spatial"]==1
+            investment_transmission_planning_hourly!(EP, inputs, setup)
+        elseif setup["Benders_spatial"]==2
+            investment_transmission_planning_budget!(EP, inputs, setup)
+        else
+            investment_transmission!(EP, inputs, setup)
+        end
     end
 
     # Technologies
@@ -300,7 +315,7 @@ function planning_model!(EP::Model,setup::Dict, inputs::Dict)
 
     # Model constraints, variables, expression related to retrofit technologies
     if !isempty(inputs["RETROFIT_OPTIONS"])
-        if setup["Benders"]==1
+        if (setup["Benders"]==1 || setup["Benders_spatial"]>=1)
             error("Retrofits and Benders are not integrated yet.")
         else
             EP = retrofit(EP, inputs)
@@ -328,6 +343,7 @@ function planning_model!(EP::Model,setup::Dict, inputs::Dict)
     end
 
 
+    # This really only applies to capacity and no operations, so it's not a part of the subproblem
     if (setup["MinCapReq"] == 1)
         minimum_capacity_requirement!(EP, inputs, setup)
     end
@@ -336,12 +352,12 @@ function planning_model!(EP::Model,setup::Dict, inputs::Dict)
         maximum_capacity_requirement!(EP, inputs, setup)
     end
 
-    # CO2 emissions limits
+    # CO2 emissions limits - don't touch this yet, but this is only temporal 
     if setup["CO2Cap"] > 0 && setup["Benders"]==1
         co2_cap_planning!(EP,inputs,setup)
     end
 
-    # Energy Share Requirement
+    # Energy Share Requirement - don't touch this yet, but this is only temporal (the only policy I will implement is CO2 cap for now)
     if setup["EnergyShareRequirement"] >= 1 && setup["Benders"]==1
         energy_share_requirement_planning!(EP,inputs,setup)
     end
@@ -414,7 +430,7 @@ function generate_model_legacy(setup::Dict, inputs::Dict, OPTIMIZER::MOI.Optimiz
 
     fuel!(EP, inputs, setup)
 
-    co2!(EP, inputs)
+    co2!(EP, inputs, setup)
 
     if setup["OperationalReserves"] > 0
         operational_reserves!(EP, inputs, setup)

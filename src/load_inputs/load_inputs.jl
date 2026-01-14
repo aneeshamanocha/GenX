@@ -11,14 +11,63 @@ returns: Dict (dictionary) object containing all data inputs
 """
 function load_inputs(setup::Dict, path::AbstractString)
 
+    ## Declare Dict (dictionary) object used to store parameters
+    inputs = Dict()
+
+    # IF THIS INPUT FILE ALREADY EXISTS, JUST READ IT IN
+    inputs_file = joinpath(path, "inputs_dict_RTS_v2.jld2")
+    if isfile(inputs_file)
+        data = JLD2.load(joinpath(path, "inputs_dict_RTS_v2.jld2"))
+        inputs = data["inputs"]
+        inputs["flag_JLD2"] = 1
+        println("Successfully read in inputs for NREL RTS system")
+
+        # Fix network issues from David
+        inputs["pNet_Map"] = inputs["pNet_Map"][1:120, :]
+        inputs["pTrans_Max"] = inputs["pTrans_Max"][1:120]
+        inputs["pC_Line_Reinforcement"] = inputs["pC_Line_Reinforcement"][121:240]
+        inputs["EXPANSION_LINES"] = inputs["EXPANSION_LINES"] .- 120
+        inputs["L"] = 120
+        #inputs["pMax_D_Curtail"] = [100.0]
+        #inputs["pC_D_Curtail"] = [10000000.0]
+        # Some read issues with allam cycle (?)
+        allam_dict = Dict()
+        inputs["allam_dict"] = allam_dict
+        ALLAM_CYCLE_LOX = Vector{Any}()  # empty vector
+        inputs["ALLAM_CYCLE_LOX"] = ALLAM_CYCLE_LOX
+
+        inputs["pP_Max"] = inputs["pP_Max"][:, 1:8760]
+        inputs["pD"] = inputs["pD"][1:8760, :]
+        inputs["C_Start"] = inputs["C_Start"][:, 1:8760]
+        for ks in keys(inputs["fuel_costs"])
+            inputs["fuel_costs"][ks] = inputs["fuel_costs"][ks][1:8760]
+        end
+
+        inputs["T"] = 8760
+        inputs["H"] = 8760
+        inputs["hours_per_subperiod"] = 8760
+        inputs["omega"] = ones(Float64, 8760)
+        inputs["Weights"] = [8760]
+        inputs["INTERIOR_SUBPERIODS"] = inputs["INTERIOR_SUBPERIODS"][1:8759]
+        
+        #inputs["REP_PERIOD"] = 52
+        #inputs["hours_per_subperiod"] = 168
+        #inputs["Weights"] = fill(168.0, 52)  # each period represents 168 hours
+        #inputs["omega"] = ones(52*168)
+        # need to fix omega and Weights too
+        return inputs
+    else
+        inputs["flag_JLD2"] = 0
+        println("Continue reading without NREL RTS system")
+    end
+
     ## Read input files
     println("Reading Input CSV Files")
     ## input paths
     system_path = joinpath(path, setup["SystemFolder"])
     resources_path = joinpath(path, setup["ResourcesFolder"])
     policies_path = joinpath(path, setup["PoliciesFolder"])
-    ## Declare Dict (dictionary) object used to store parameters
-    inputs = Dict()
+
     # Read input data about power network topology, operating and expansion attributes
     if isfile(joinpath(system_path, "Network.csv"))
         network_var = load_network_data!(setup, system_path, inputs)

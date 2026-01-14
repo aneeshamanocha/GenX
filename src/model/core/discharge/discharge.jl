@@ -14,6 +14,7 @@ function discharge!(EP::Model, inputs::Dict, setup::Dict)
     println("Discharge Module")
 
     gen = inputs["RESOURCES"]
+    Benders_spatial = setup["Benders_spatial"]
 
     G = inputs["G"]     # Number of resources (generators, storage, DR, and DERs)
     T = inputs["T"]     # Number of time steps
@@ -22,18 +23,28 @@ function discharge!(EP::Model, inputs::Dict, setup::Dict)
     ### Variables ###
 
     # Energy injected into the grid by resource "y" at hour "t"
-    @variable(EP, vP[y = 1:G, t = 1:T]>=0)
+    if Benders_spatial == 0
+        @variable(EP, vP[y = 1:G, t = 1:T]>=0)
+        # Variable costs of "generation" for resource "y" during hour "t" = variable O&M
+        @expression(EP,
+            eCVar_out[y = 1:G, t = 1:T],
+            (inputs["omega"][t]*(var_om_cost_per_mwh(gen[y]) * vP[y, t])))
+        # Sum individual resource contributions to variable discharging costs to get total variable discharging costs
+        @expression(EP, eTotalCVarOutT[t = 1:T], sum(eCVar_out[y, t] for y in 1:G))
+    else
+        G_indices = inputs["G_indices"]
+        @variable(EP, vP[y in G_indices, t = 1:T]>=0)
+
+        @expression(EP,
+            eCVar_out[y in G_indices, t = 1:T],
+            (inputs["omega"][t]*(var_om_cost_per_mwh(gen[y]) * vP[y, t])))
+        # Sum individual resource contributions to variable discharging costs to get total variable discharging costs
+        @expression(EP, eTotalCVarOutT[t = 1:T], sum(eCVar_out[y, t] for y in G_indices))
+    end
 
     ### Expressions ###
 
     ## Objective Function Expressions ##
-
-    # Variable costs of "generation" for resource "y" during hour "t" = variable O&M
-    @expression(EP,
-        eCVar_out[y = 1:G, t = 1:T],
-        (inputs["omega"][t]*(var_om_cost_per_mwh(gen[y]) * vP[y, t])))
-    # Sum individual resource contributions to variable discharging costs to get total variable discharging costs
-    @expression(EP, eTotalCVarOutT[t = 1:T], sum(eCVar_out[y, t] for y in 1:G))
     @expression(EP, eTotalCVarOut, sum(eTotalCVarOutT[t] for t in 1:T))
 
     # Add total variable discharging cost contribution to the objective function

@@ -10,7 +10,9 @@ function capacity_decisions!(EP, inputs::Dict, setup::Dict)
         error("Benders not yet supported with VRE-STOR")
     end
 
-    if inputs["Z"]>1
+    if setup["Benders_spatial"]>=1
+        transmission_capacity_decisions_spatial_benders!(EP, inputs, setup)
+    elseif inputs["Z"]>1
         transmission_capacity_decisions!(EP, inputs, setup)
     end
 
@@ -40,9 +42,11 @@ function discharge_capacity_decisions!(EP, inputs::Dict, setup::Dict)
     @variable(EP, vRETROFITCAP[y in RETROFIT_CAP]>=0)
 
     ### Expressions ###
-    @expression(EP, eExistingCap[y in 1:G], existing_cap_mw(gen[y]))
+    if setup["Benders_spatial"] >= 1
+        G_indices = inputs["G_indices"]
+        @expression(EP, eExistingCap[y in G_indices], existing_cap_mw(gen[y]))
 
-    @expression(EP, eTotalCap[y in 1:G],
+        @expression(EP, eTotalCap[y in G_indices],
         if y in intersect(NEW_CAP, RET_CAP, RETROFIT_CAP) # Resources eligible for new capacity, retirements and being retrofitted
             if y in COMMIT
                 eExistingCap[y] +
@@ -78,6 +82,46 @@ function discharge_capacity_decisions!(EP, inputs::Dict, setup::Dict)
         else # Resources not eligible for new capacity or retirement
             eExistingCap[y] + EP[:vZERO]
         end)
+    else
+        @expression(EP, eExistingCap[y in 1:G], existing_cap_mw(gen[y]))
+
+        @expression(EP, eTotalCap[y in 1:G],
+        if y in intersect(NEW_CAP, RET_CAP, RETROFIT_CAP) # Resources eligible for new capacity, retirements and being retrofitted
+            if y in COMMIT
+                eExistingCap[y] +
+                cap_size(gen[y]) * (EP[:vCAP][y] - EP[:vRETCAP][y] - EP[:vRETROFITCAP][y])
+            else
+                eExistingCap[y] + EP[:vCAP][y] - EP[:vRETCAP][y] - EP[:vRETROFITCAP][y]
+            end
+        elseif y in intersect(setdiff(RET_CAP, NEW_CAP), setdiff(RET_CAP, RETROFIT_CAP)) # Resources eligible for only capacity retirements
+            if y in COMMIT
+                eExistingCap[y] - cap_size(gen[y]) * EP[:vRETCAP][y]
+            else
+                eExistingCap[y] - EP[:vRETCAP][y]
+            end
+        elseif y in setdiff(intersect(RET_CAP, NEW_CAP), RETROFIT_CAP) # Resources eligible for retirement and new capacity
+            if y in COMMIT
+                eExistingCap[y] + cap_size(gen[y]) * (EP[:vCAP][y] - EP[:vRETCAP][y])
+            else
+                eExistingCap[y] + EP[:vCAP][y] - EP[:vRETCAP][y]
+            end
+        elseif y in setdiff(intersect(RET_CAP, RETROFIT_CAP), NEW_CAP) # Resources eligible for retirement and retrofitting
+            if y in COMMIT
+                eExistingCap[y] -
+                cap_size(gen[y]) * (EP[:vRETROFITCAP][y] + EP[:vRETCAP][y])
+            else
+                eExistingCap[y] - (EP[:vRETROFITCAP][y] + EP[:vRETCAP][y])
+            end
+        elseif y in intersect(setdiff(NEW_CAP, RET_CAP), setdiff(NEW_CAP, RETROFIT_CAP))  # Resources eligible for only new capacity
+            if y in COMMIT
+                eExistingCap[y] + cap_size(gen[y]) * EP[:vCAP][y]
+            else
+                eExistingCap[y] + EP[:vCAP][y]
+            end
+        else # Resources not eligible for new capacity or retirement
+            eExistingCap[y] + EP[:vZERO]
+        end)
+    end
 
 end
 
@@ -133,9 +177,15 @@ function storage_capacity_decisions!(EP, inputs::Dict, setup::Dict)
 
         ### Expressions ###
     
-        @expression(EP,
-            eExistingCapCharge[y in STOR_ASYMMETRIC],
-            existing_charge_cap_mw(gen[y]))
+        if setup["Benders_spatial"]==0
+            @expression(EP,
+                eExistingCapCharge[y in STOR_ASYMMETRIC],
+                existing_charge_cap_mw(gen[y]))
+        else
+            @expression(EP,
+                eExistingCapCharge[y in STOR_ASYMMETRIC],
+                existing_charge_cap_mw(gen[y]))
+        end
 
         @expression(EP, eTotalCapCharge[y in STOR_ASYMMETRIC],
             if (y in intersect(NEW_CAP_CHARGE, RET_CAP_CHARGE))
@@ -182,5 +232,48 @@ function transmission_capacity_decisions!(EP, inputs::Dict, setup::Dict)
     else
         @expression(EP, eAvail_Trans_Cap[l = 1:L], eTransMax[l]+EP[:vZERO])
     end
+end
 
+function transmission_capacity_decisions_spatial_benders!(EP, inputs::Dict, setup::Dict)
+    L = inputs["L"]     # Number of transmission lines
+    L_indices = inputs["L_indices"]
+    Z = inputs["Z"]
+    T = inputs["T"]
+    NetworkExpansion = setup["NetworkExpansion"]
+
+    if NetworkExpansion == 1
+        # Network lines and zones that are expandable have non-negative maximum reinforcement inputs
+        EXPANSION_LINES = inputs["EXPANSION_LINES"]
+    end
+
+    ### Variables ###
+
+    if NetworkExpansion == 1
+        # Transmission network capacity reinforcements per line
+        @variable(EP, vNEW_TRANS_CAP[l in EXPANSION_LINES]>=0)
+    end
+
+    ### Expressions ###
+    @expression(EP, eTransMax[l = L_indices], inputs["pTrans_Max"][l])
+    
+    ## Transmission power flow and loss related expressions:
+    # Total availabile maximum transmission capacity is the sum of existing maximum transmission capacity plus new transmission capacity
+    if NetworkExpansion == 1
+        @expression(EP, eAvail_Trans_Cap[l = L_indices],
+            if l in EXPANSION_LINES
+                eTransMax[l] + vNEW_TRANS_CAP[l]
+            else
+                eTransMax[l] + EP[:vZERO]
+            end)
+    else
+        @expression(EP, eAvail_Trans_Cap[l = L_indices], eTransMax[l]+EP[:vZERO])
+    end
+
+    # If spatial decomposition, hourly decomposition = 2, budget-based = 1
+    if setup["Benders_spatial"] == 2 
+        O_Z = inputs["O_Z"]
+        @variable(EP, vFlowBudget[z=1:O_Z] >= 0)
+    elseif setup["Benders_spatial"] == 1
+        @variable(EP, vFlowHourly[1:L, t=1:T])
+    end
 end

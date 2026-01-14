@@ -227,18 +227,35 @@ function thermal_commit!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     ### Minimum up and down times (Constraints #9-10)
-    Up_Time = zeros(Int, G)
-    Up_Time[THERM_COMMIT] .= Int.(floor.(up_time.(gen[THERM_COMMIT])))
-    @constraint(EP, [y in THERM_COMMIT, t in 1:T],
-        EP[:vCOMMIT][y,
-            t]>=sum(EP[:vSTART][y, u] for u in hoursbefore(p, t, 0:(Up_Time[y] - 1))))
+    if setup["Benders_spatial"]==0
+        Up_Time = zeros(Int, G)
+        Up_Time[THERM_COMMIT] .= Int.(floor.(up_time.(gen[THERM_COMMIT])))
+        @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+            EP[:vCOMMIT][y,
+                t]>=sum(EP[:vSTART][y, u] for u in hoursbefore(p, t, 0:(Up_Time[y] - 1))))
 
-    Down_Time = zeros(Int, G)
-    Down_Time[THERM_COMMIT] .= Int.(floor.(down_time.(gen[THERM_COMMIT])))
-    @constraint(EP, [y in THERM_COMMIT, t in 1:T],
-        EP[:eTotalCap][y] / cap_size(gen[y]) -
-        EP[:vCOMMIT][y,
-            t]>=sum(EP[:vSHUT][y, u] for u in hoursbefore(p, t, 0:(Down_Time[y] - 1))))
+        Down_Time = zeros(Int, G)
+        Down_Time[THERM_COMMIT] .= Int.(floor.(down_time.(gen[THERM_COMMIT])))
+        @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+            EP[:eTotalCap][y] / cap_size(gen[y]) -
+            EP[:vCOMMIT][y,
+                t]>=sum(EP[:vSHUT][y, u] for u in hoursbefore(p, t, 0:(Down_Time[y] - 1))))
+    else
+        og = inputs["og"]
+        Up_Time = zeros(Int, og)
+        Up_Time[THERM_COMMIT] .= Int.(floor.(up_time.(gen[THERM_COMMIT])))
+        @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+            EP[:vCOMMIT][y,
+                t]>=sum(EP[:vSTART][y, u] for u in hoursbefore(p, t, 0:(Up_Time[y] - 1))))
+
+        Down_Time = zeros(Int, og)
+        Down_Time[THERM_COMMIT] .= Int.(floor.(down_time.(gen[THERM_COMMIT])))
+        @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+            EP[:eTotalCap][y] / cap_size(gen[y]) -
+            EP[:vCOMMIT][y,
+                t]>=sum(EP[:vSHUT][y, u] for u in hoursbefore(p, t, 0:(Down_Time[y] - 1))))
+    end
+    
     ## END Constraints for thermal units subject to integer (discrete) unit commitment decisions
 
     # Additional constraints on fusion; create total recirculating power expressions

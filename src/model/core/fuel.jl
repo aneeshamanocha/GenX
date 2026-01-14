@@ -133,7 +133,33 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     ### Expressions ####
     # Fuel consumed on start-up (MMBTU or kMMBTU (scaled)) 
     # if unit commitment is modelled
-    @expression(EP, eStartFuel[y in 1:G, t = 1:T],
+    if setup["Benders_spatial"]== 0
+        @expression(EP, eStartFuel[y in 1:G, t = 1:T],
+            if y in THERM_COMMIT
+                (cap_size(gen[y]) * EP[:vSTART][y, t] *
+                start_fuel_mmbtu_per_mw(gen[y]))
+            else
+                0
+            end)
+
+        # time-series fuel consumption by plant 
+        @expression(EP, ePlantFuel_generation[y in 1:G, t = 1:T],
+            if y in SINGLE_FUEL   # for single fuel plants
+                EP[:vFuel][y, t]
+            else # for multi fuel plants
+                sum(EP[:vMulFuels][y, i, t] for i in 1:max_fuels)
+            end)
+
+        @expression(EP, ePlantFuel_start[y in 1:G, t = 1:T],
+            if y in SINGLE_FUEL   # for single fuel plants
+                EP[:vStartFuel][y, t]
+            else # for multi fuel plants
+                sum(EP[:vMulStartFuels][y, i, t] for i in 1:max_fuels)
+            end)
+    else
+        G_indices = inputs["G_indices"]
+
+        @expression(EP, eStartFuel[y in G_indices, t = 1:T],
         if y in THERM_COMMIT
             (cap_size(gen[y]) * EP[:vSTART][y, t] *
              start_fuel_mmbtu_per_mw(gen[y]))
@@ -141,19 +167,23 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
             0
         end)
 
-    # time-series fuel consumption by plant 
-    @expression(EP, ePlantFuel_generation[y in 1:G, t = 1:T],
-        if y in SINGLE_FUEL   # for single fuel plants
-            EP[:vFuel][y, t]
-        else # for multi fuel plants
-            sum(EP[:vMulFuels][y, i, t] for i in 1:max_fuels)
-        end)
-    @expression(EP, ePlantFuel_start[y in 1:G, t = 1:T],
-        if y in SINGLE_FUEL   # for single fuel plants
-            EP[:vStartFuel][y, t]
-        else # for multi fuel plants
-            sum(EP[:vMulStartFuels][y, i, t] for i in 1:max_fuels)
-        end)
+        # time-series fuel consumption by plant 
+        @expression(EP, ePlantFuel_generation[y in G_indices, t = 1:T],
+            if y in SINGLE_FUEL   # for single fuel plants
+                EP[:vFuel][y, t]
+            else # for multi fuel plants
+                sum(EP[:vMulFuels][y, i, t] for i in 1:max_fuels)
+            end)
+
+        @expression(EP, ePlantFuel_start[y in G_indices, t = 1:T],
+            if y in SINGLE_FUEL   # for single fuel plants
+                EP[:vStartFuel][y, t]
+            else # for multi fuel plants
+                sum(EP[:vMulStartFuels][y, i, t] for i in 1:max_fuels)
+            end)
+    end
+
+
 
     # for multi-fuel resources
     # annual fuel consumption by plant and fuel type
@@ -183,19 +213,39 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
             sum(omega[t] * EP[:eCFuelOut_multi_start][y, i, t] for t in 1:T))
     end
 
-    @expression(EP, eCFuelStart[y = 1:G, t = 1:T],
+    if setup["Benders_spatial"] == 0
+        @expression(EP, eCFuelStart[y = 1:G, t = 1:T],
+        if y in SINGLE_FUEL
+            (fuel_costs[fuel(gen[y])][t] * EP[:vStartFuel][y, t])
+        else
+            sum(EP[:eCFuelOut_multi_start][y, i, t] for i in 1:max_fuels)
+        end)
+        # plant level start-up fuel cost for output
+        @expression(EP, ePlantCFuelStart[y = 1:G],
+            sum(omega[t] * EP[:eCFuelStart][y, t] for t in 1:T))
+    else
+        @expression(EP, eCFuelStart[y in G_indices, t = 1:T],
         if y in SINGLE_FUEL
             (fuel_costs[fuel(gen[y])][t] * EP[:vStartFuel][y, t])
         else
             sum(EP[:eCFuelOut_multi_start][y, i, t] for i in 1:max_fuels)
         end)
 
-    # plant level start-up fuel cost for output
-    @expression(EP, ePlantCFuelStart[y = 1:G],
-        sum(omega[t] * EP[:eCFuelStart][y, t] for t in 1:T))
+        # plant level start-up fuel cost for output
+        @expression(EP, ePlantCFuelStart[y = G_indices],
+            sum(omega[t] * EP[:eCFuelStart][y, t] for t in 1:T))
+    end
+
+    
     # zonal level total fuel cost for output
-    @expression(EP, eZonalCFuelStart[z = 1:Z],
+    if setup["Benders_spatial"]==0
+        @expression(EP, eZonalCFuelStart[z = 1:Z],
         sum(EP[:ePlantCFuelStart][y] for y in resources_in_zone_by_rid(gen, z)))
+    else
+        G_indices = inputs["G_indices"]
+        @expression(EP, eZonalCFuelStart[z = 1:Z],
+        sum(EP[:ePlantCFuelStart][y] for y in intersect(G_indices, resources_in_zone_by_rid(gen, z))))
+    end
 
     # Fuel cost for power generation
     # for multi-fuel resources
@@ -208,18 +258,36 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
             sum(omega[t] * EP[:eCFuelOut_multi][y, i, t] for t in 1:T))
     end
 
-    @expression(EP, eCFuelOut[y = 1:G, t = 1:T],
+    if setup["Benders_spatial"]==0
+        @expression(EP, eCFuelOut[y = 1:G, t = 1:T],
         if y in SINGLE_FUEL
             (fuel_costs[fuel(gen[y])][t] * EP[:vFuel][y, t])
         else
             sum(EP[:eCFuelOut_multi][y, i, t] for i in 1:max_fuels)
         end)
-    # plant level start-up fuel cost for output
-    @expression(EP, ePlantCFuelOut[y = 1:G],
-        sum(omega[t] * EP[:eCFuelOut][y, t] for t in 1:T))
+        # plant level start-up fuel cost for output
+        @expression(EP, ePlantCFuelOut[y = 1:G],
+            sum(omega[t] * EP[:eCFuelOut][y, t] for t in 1:T))
+    else
+        @expression(EP, eCFuelOut[y = G_indices, t = 1:T],
+        if y in SINGLE_FUEL
+            (fuel_costs[fuel(gen[y])][t] * EP[:vFuel][y, t])
+        else
+            sum(EP[:eCFuelOut_multi][y, i, t] for i in 1:max_fuels)
+        end)
+        # plant level start-up fuel cost for output
+        @expression(EP, ePlantCFuelOut[y = G_indices],
+            sum(omega[t] * EP[:eCFuelOut][y, t] for t in 1:T))
+    end
+    
     # zonal level total fuel cost for output
-    @expression(EP, eZonalCFuelOut[z = 1:Z],
+    if setup["Benders_spatial"]==0
+        @expression(EP, eZonalCFuelOut[z = 1:Z],
         sum(EP[:ePlantCFuelOut][y] for y in resources_in_zone_by_rid(gen, z)))
+    else
+        @expression(EP, eZonalCFuelOut[z = 1:Z],
+        sum(EP[:ePlantCFuelOut][y] for y in intersect(G_indices,resources_in_zone_by_rid(gen, z))))
+    end
 
     # system level total fuel cost for output
     @expression(EP, eTotalCFuelOut, sum(eZonalCFuelOut[z] for z in 1:Z))
@@ -256,10 +324,10 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     ### only apply constraint to generators with fuel type other than None
 
     @constraint(EP,
-        cFuelCalculation_single[
-            y in intersect(SINGLE_FUEL, setdiff(setdiff(HAS_FUEL, THERM_COMMIT),ALLAM_CYCLE_LOX)),
-            t = 1:T],
-        EP[:vFuel][y, t] - EP[:vP][y, t] * heat_rate_mmbtu_per_mwh(gen[y])==0)
+            cFuelCalculation_single[
+                y in intersect(SINGLE_FUEL, setdiff(setdiff(HAS_FUEL, THERM_COMMIT),ALLAM_CYCLE_LOX)),
+                t = 1:T],
+            EP[:vFuel][y, t] - EP[:vP][y, t] * heat_rate_mmbtu_per_mwh(gen[y])==0)
 
     if !isempty(MULTI_FUELS)
         @constraint(EP,

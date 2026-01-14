@@ -26,6 +26,7 @@ export run_timedomainreduction!
 using JuMP # used for mathematical programming
 using DataFrames #This package allows put together data into a matrix
 using CSV
+using JLD2
 using StatsBase
 using LinearAlgebra
 using YAML

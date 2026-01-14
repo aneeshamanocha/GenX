@@ -60,17 +60,22 @@ function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
         for y in VRE_POWER_OUT
             # Define the set of generator indices corresponding to the different sites (or bins) of a particular VRE technology (E.g. wind or solar) in a particular zone.
             # For example the wind resource in a particular region could be include three types of bins corresponding to different sites with unique interconnection, hourly capacity factor and maximim available capacity limits.
-            VRE_BINS = intersect(resource_id.(gen[resource_id.(gen) .>= y]),
+            if setup["Benders_spatial"] == 0
+                VRE_BINS = intersect(resource_id.(gen[resource_id.(gen) .>= y]),
                 resource_id.(gen[resource_id.(gen) .<= y + num_vre_bins(gen[y]) - 1]))
+                @constraint(EP,
+                [t = 1:T],
+                EP[:vP][y,t]<=sum(inputs["pP_Max"][yy, t] * EP[:eTotalCap][yy]
+                for yy in VRE_BINS))
+            end
 
             # Maximum power generated per hour by renewable generators must be less than
             # sum of product of hourly capacity factor for each bin times its the bin installed capacity
             # Note: inequality constraint allows curtailment of output below maximum level.
-            @constraint(EP,
-                [t = 1:T],
-                EP[:vP][y,t]<=sum(inputs["pP_Max"][yy, t] * EP[:eTotalCap][yy]
-                for yy in VRE_BINS))
         end
+        @constraint(EP,
+                [y in VRE_POWER_OUT, t = 1:T],
+                EP[:vP][y,t]<=inputs["pP_Max"][y, t] * EP[:eTotalCap][y])
     end
 
     # Set power variables for all bins that are not being modeled for hourly output to be zero

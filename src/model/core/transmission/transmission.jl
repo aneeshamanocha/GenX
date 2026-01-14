@@ -316,3 +316,88 @@ function transmission!(EP::Model, inputs::Dict, setup::Dict)
         add_similar_to_expression!(EP[:eESR], -eESRTran)
     end
 end
+
+
+function transmission_operations_hourly!(EP::Model, inputs::Dict, setup::Dict)
+    println("Transmission Module")
+    T = inputs["T"]     # Number of time steps (hours)
+    Z = inputs["Z"]     # Number of zones
+    L = inputs["L"]     # Number of transmission lines
+    L_indices = inputs["L_indices"]
+    oz = inputs["oz"]
+
+    ### Variables ###
+
+    # Local linking variable
+    #@variable(EP, vFlowHourly[l = 1:L, t=1:T])
+    # Power flow on each transmission line "l" at hour "t"
+    @variable(EP, vFLOW[l in L_indices, t = 1:T])
+
+    # Need to fix subproblem's hourly flow equals master value -- where is this being fixed (?)
+    @constraint(EP, cFix_Flows[l in L_indices, t = 1:T], vFLOW[l, t] == EP[:vFlowHourly][l,t])
+
+    # Net power flow outgoing from zone "z" at hour "t" in MW
+    @expression(EP,
+        eNet_Export[t = 1:T],
+        sum(inputs["pNet_Map"][l, oz] * vFLOW[l, t] for l in L_indices)
+    )
+
+    for t in 1:T
+        add_to_expression!(EP[:ePowerBalance][t, Z], -eNet_Export[t])
+    end
+    #@expression(EP, ePowerBalanceNetExportFlows[t = 1:T, z = 1:Z],
+    #    -eNet_Export_Flows[z, t])
+
+    #add_similar_to_expression!(EP[:ePowerBalance], ePowerBalanceNetExportFlows)
+end
+
+function transmission_operations_budget!(EP::Model, inputs::Dict, setup::Dict)
+    println("Transmission Module - Spatial Budget")
+    T = inputs["T"]     # Number of time steps (hours)
+    Z = inputs["Z"]     # Number of zones
+    L = inputs["L"]     # Number of transmission lines
+    L_indices = inputs["L_indices"]
+    oz = inputs["oz"] # Original zone
+    EXPANSION_LINES = inputs["EXPANSION_LINES"]
+
+    ### Variables ###
+
+    # Power flow on each transmission line "l" at hour "t"
+    @variable(EP, vFLOW[l in L_indices, t = 1:T])
+    @variable(EP, vExpPos[z=1:Z, t=1:T] >= 0)
+    @variable(EP, vExpNeg[z=1:Z, t=1:T] >= 0)
+    @variable(EP, vFlowBudget_Zone >= 0)
+
+    # Fix flow budget to what was determined in master problem
+    @constraint(EP, cFlowBudgetForZone, vFlowBudget_Zone == EP[:vFlowBudget][oz])
+
+    ### Net export definition ###
+    @constraint(EP, cExportBalance[t=1:T],
+        sum(inputs["pNet_Map"][l, oz] * vFLOW[l,t] for l in L_indices)
+            == vExpPos[Z,t] - vExpNeg[Z,t]
+    )
+
+    ### Zonal flow budget constraint ###
+    @constraint(EP, cFlowBudget[z=1:Z],
+        sum(vExpPos[z,t] + vExpNeg[z,t] for t=1:T)
+            <= vFlowBudget_Zone)
+
+    # Maximum power flows, power flow on each transmission line cannot exceed maximum capacity of the line at any hour "t"
+    @constraints(EP,
+        begin
+            cMaxFlow_out[l in L_indices, t = 1:T], vFLOW[l, t] <= EP[:eAvail_Trans_Cap][l]
+            cMaxFlow_in[l in L_indices, t = 1:T], vFLOW[l, t] >= -EP[:eAvail_Trans_Cap][l]
+        end)
+
+    # Need to fix subproblem's hourly flow = master flow variable for the zone
+
+    # Net power flow outgoing from zone "z" at hour "t" in MW
+    @expression(EP,
+        eNet_Export_Flows[t = 1:T],
+        sum(inputs["pNet_Map"][l, oz] * vFLOW[l, t] for l in L_indices))
+
+    for t in 1:T
+        add_to_expression!(EP[:ePowerBalance][t, Z], -eNet_Export_Flows[t])
+    end
+
+end

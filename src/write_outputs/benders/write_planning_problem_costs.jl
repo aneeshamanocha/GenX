@@ -53,12 +53,14 @@ function write_planning_problem_costs(path::AbstractString, inputs::Dict, setup:
     for z in 1:Z
         tempCFix = 0.0
 
-        Y_ZONE = resources_in_zone_by_rid(gen, z)
+        Y_ZONE = findall(inputs["R_ZONES"] .== z)
         STOR_ALL_ZONE = intersect(inputs["STOR_ALL"], Y_ZONE)
         STOR_ASYMMETRIC_ZONE = intersect(inputs["STOR_ASYMMETRIC"], Y_ZONE)
 
-        eCFix = sum(value.(EP[:eCFix][Y_ZONE]))
-        tempCFix += eCFix
+        if !isempty(Y_ZONE)
+            eCFix = sum(value.(EP[:eCFix][Y_ZONE]))
+            tempCFix += eCFix
+        end
 
         if !isempty(STOR_ALL_ZONE)
             eCFixEnergy = sum(value.(EP[:eCFixEnergy][STOR_ALL_ZONE]))

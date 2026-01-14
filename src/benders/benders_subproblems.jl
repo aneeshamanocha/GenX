@@ -51,20 +51,28 @@ function init_local_subproblems!(setup::Dict,inputs_local::Vector{Dict{Any,Any}}
 
     nW = length(inputs_local)
 
+    # Dictionary has model, planning variables for the subproblem, and subperiod
     for i=1:nW
 		EP, planning_variables_sub = init_subproblem(setup,inputs_local[i],OPTIMIZER,planning_variables);
         subproblems_local[i]["Model"] = EP;
         subproblems_local[i]["planning_variables_sub"] = planning_variables_sub
-        subproblems_local[i]["SubPeriod"] = inputs_local[i]["SubPeriod"];
+        if setup["Benders_spatial"] == 0
+            subproblems_local[i]["SubPeriod"] = inputs_local[i]["SubPeriod"];
+        else
+            subproblems_local[i]["SubPeriod"] = inputs_local[i]["oz"];
+        end
     end
 end
 
+# This function parallelizes the creation of Benders subproblem JuMP models across workers, assigns each worker 
+# the subperiods it owns, builds models locally, and gathers shared planning-variable metadata back to the master.
 function init_dist_subproblems(setup::Dict,inputs_decomp::Dict,planning_variables::Vector{String})
 
     ##### Initialize a distributed arrays of JuMP models
 	## Start pre-solve timer
 	subproblem_generation_time = time()
     
+    # Create dictionary to distribute based on size of inputs to decompose - each worker gets a slice of subproblems/vector of dictionaries
     subproblems_all = distribute([Dict() for i in 1:length(inputs_decomp)]);
 
     @sync for p in workers()

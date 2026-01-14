@@ -35,7 +35,7 @@ function run_genx_case!(case::AbstractString, optimizer::Any = HiGHS.Optimizer)
     mysetup = configure_settings(genx_settings, writeoutput_settings) # mysetup dictionary stores settings and GenX-specific parameters
 
     if mysetup["MultiStage"] == 0
-        if mysetup["Benders"] == 0
+        if (mysetup["Benders"] == 0 && mysetup["Benders_spatial"] == 0)
             run_genx_case_simple!(case, mysetup, optimizer)
         else
             benders_settings_path = get_settings_path(case, "benders_settings.yml")
@@ -214,7 +214,7 @@ end
 
 
 function run_genx_case_benders!(case::AbstractString, mysetup::Dict)
-    settings_path = get_settings_path(case)    
+    settings_path = get_settings_path(case)
     ### Cluster time series inputs if necessary and if specified by the user
     if mysetup["TimeDomainReduction"] == 1
         TDRpath = joinpath(case, mysetup["TimeDomainReductionFolder"])
@@ -230,7 +230,15 @@ function run_genx_case_benders!(case::AbstractString, mysetup::Dict)
     mysetup["settings_path"] = settings_path;
 
     myinputs = load_inputs(mysetup, case);
-    myinputs_decomp = separate_inputs_subperiods(myinputs);
+    
+    if (mysetup["Benders"] == 1 && mysetup["Benders_spatial"] == 0)
+        myinputs_decomp = separate_inputs_subperiods(myinputs);
+    elseif (mysetup["Benders_spatial"] >= 1)
+        println("HERE")
+        myinputs_decomp = separate_inputs_zones(myinputs);
+    else
+        myinputs_decomp = separate_inputs_subperiods(myinputs); # FOR NOW, WILL CHANGE TO BOTH TEMPORAL AND SPATIAL
+    end
 
     benders_inputs = generate_benders_inputs(mysetup,myinputs,myinputs_decomp)
 
