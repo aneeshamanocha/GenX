@@ -1,0 +1,15 @@
+Method,Line 1,Line 2
+Monolithic,409.9991424,914.9976957
+Temporal + Regularization,410,915
+Temporal,410,915
+Spatial Hourly + Regularization,410,915
+Spatial Hourly,410,915
+Spatial Budget + Regularization,0,915
+Spatial Budget,0,915
+,,
+,,
+,,
+,,
+,,
+,,
+,,

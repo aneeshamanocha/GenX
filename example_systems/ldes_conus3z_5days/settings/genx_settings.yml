@@ -6,7 +6,7 @@ EnergyShareRequirement: 0
 PrintModel: 0
 TimeDomainReduction: 1
 Trans_Loss_Segments: 1
-CapacityReserveMargin: 1
+CapacityReserveMargin: 0
 ModelingtoGenerateAlternativeSlack: 0.1
 MethodofMorris: 0
 StorageVirtualDischarge: 1
@@ -17,8 +17,9 @@ UCommit: 2
 ModelingToGenerateAlternatives: 0
 MaxCapReq: 1
 MinCapReq: 1
-CO2Cap: 1
+CO2Cap: 0
 WriteShadowPrices: 1
 Benders: 0
+Benders_spatial: 2
 LDES_Feasible: 0
 IntegerInvestments: 0

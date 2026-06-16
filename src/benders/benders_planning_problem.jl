@@ -14,7 +14,11 @@ function generate_planning_problem(setup::Dict, inputs::Dict, OPTIMIZER::MOI.Opt
 
     planning_model!(EP,setup,inputs)
 
-    @variable(EP,vTHETA[1:inputs["REP_PERIOD"]]>=0)
+	if setup["Benders_spatial"] >= 1
+		@variable(EP,vTHETA[1:inputs["Z"]]>=0)
+	else
+		@variable(EP,vTHETA[1:inputs["REP_PERIOD"]]>=0)
+	end
 
     ## Define the objective function
     @objective(EP, Min, setup["ObjScale"]*(EP[:eObj]+sum(vTHETA)))

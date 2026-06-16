@@ -1,0 +1,13 @@
+﻿Method,cTotal,cFix,cNetwork
+Monolithic,1.05447E+11,1.05363E+11,84356575.6
+Temporal + Regularization,1.05151E+11,1.05066E+11,84356780
+Temporal,1.0524E+11,1.05156E+11,84356780
+Spatial Hourly + Regularization,1.06549E+11,1.06465E+11,84356780
+Spatial Hourly,1.0513E+11,1.05045E+11,84356780
+Spatial Budget + Regularization,1.06337E+11,1.06271E+11,65514000
+Spatial Budget,1.0512E+11,1.05055E+11,65514000
+,,,
+,,,
+,,,
+,,,
+,-0.002808426,,
