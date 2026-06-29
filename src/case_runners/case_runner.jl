@@ -65,43 +65,43 @@ function run_genx_case_simple!(case::AbstractString, mysetup::Dict, optimizer::A
         system_path = joinpath(case, mysetup["SystemFolder"])
         prevent_doubled_timedomainreduction(system_path)
         if !time_domain_reduced_files_exist(TDRpath)
-            println("Clustering Time Series Data (Grouped)...")
+            println("Clustering Time Series Data (Grouped)..."); flush(stdout)
             cluster_inputs(case, settings_path, mysetup)
         else
-            println("Time Series Data Already Clustered.")
+            println("Time Series Data Already Clustered."); flush(stdout)
         end
     end
 
     ### Configure solver
-    println("Configuring Solver")
+    println("Configuring Solver"); flush(stdout)
     solver_name = lowercase(get(mysetup, "Solver", ""))
     OPTIMIZER = configure_solver(settings_path, optimizer; solver_name=solver_name)
 
     #### Running a case
 
     ### Load inputs
-    println("Loading Inputs")
+    println("Loading Inputs"); flush(stdout)
     myinputs = load_inputs(mysetup, case)
 
-    println("Generating the Optimization Model")
+    println("Generating the Optimization Model"); flush(stdout)
     time_elapsed = @elapsed EP = generate_model(mysetup, myinputs, OPTIMIZER)
     println("Time elapsed for model building is")
-    println(time_elapsed)
+    println(time_elapsed); flush(stdout)
 
-    println("Solving Model")
+    println("Solving Model"); flush(stdout)
     EP, solve_time = solve_model(EP, mysetup)
     myinputs["solve_time"] = solve_time # Store the model solve time in myinputs
 
     # Run MGA if the MGA flag is set to 1 else only save the least cost solution
     if has_values(EP)
-        println("Writing Output")
+        println("Writing Output"); flush(stdout)
         outputs_path = get_default_output_folder(case)
         elapsed_time = @elapsed outputs_path = write_outputs(EP,
             outputs_path,
             mysetup,
             myinputs)
         println("Time elapsed for writing is")
-        println(elapsed_time)
+        println(elapsed_time); flush(stdout)
         if mysetup["ModelingToGenerateAlternatives"] == 1
             println("Starting Model to Generate Alternatives (MGA) Iterations")
             mga(EP, case, mysetup, myinputs)

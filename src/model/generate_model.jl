@@ -1,3 +1,27 @@
+#NEW: Per-module build-time log for the most recent generate_model call. The
+# @timed_module macro appends (module_name => elapsed_seconds) here; generate_model
+# clears it at the start of each call. Diagnostics tooling (diagnostics/run_tests.jl)
+# reads GenX.MODULE_BUILD_TIMES after a run and writes it to build_times.csv so build
+# times become a persisted, run-to-run diffable metric alongside costs.csv.
+# Note: for Benders this retains only the last generate_model call's modules.
+const MODULE_BUILD_TIMES = Pair{String, Float64}[]
+
+#NEW: Lightweight timing wrapper for model-building modules. Runs `expr`, records its
+# elapsed wall-clock time in MODULE_BUILD_TIMES, then prints it and flushes stdout
+# immediately so per-module progress is visible during long builds (important on
+# clusters where stdout is block-buffered).
+# Usage: @timed_module "discharge!" discharge!(EP, inputs, setup)
+macro timed_module(label, expr)
+    return quote
+        local _t0 = time()
+        $(esc(expr))
+        local _elapsed = time() - _t0
+        push!(MODULE_BUILD_TIMES, $(esc(label)) => _elapsed)
+        println(stdout, "  ", rpad($(esc(label)), 42), lpad(round(_elapsed, digits = 3), 9), " s")
+        flush(stdout)
+    end
+end
+
 @doc raw"""
 	generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAttributes,modeloutput = nothing)
 
@@ -71,6 +95,9 @@ function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithA
     T = inputs["T"]     # Number of time steps (hours)
     Z = inputs["Z"]     # Number of zones
 
+    #NEW: reset the per-module build-time log for this build (see MODULE_BUILD_TIMES).
+    empty!(MODULE_BUILD_TIMES)
+
     ## Start pre-solve timer
     presolver_start_time = time()
 
@@ -95,8 +122,8 @@ function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithA
     #NEW: Delegate to planning_model! and operation_model! helper functions.
     # planning_model! handles all investment/capacity decisions and must run first
     # so that investment variables exist when operation_model! references them.
-    planning_model!(EP, setup, inputs)
-    operation_model!(EP, setup, inputs)
+    @timed_module "planning_model! (total)" planning_model!(EP, setup, inputs)
+    @timed_module "operation_model! (total)" operation_model!(EP, setup, inputs)
 
     if setup["ModelingToGenerateAlternatives"] == 1
         mga!(EP, inputs, setup)
@@ -110,7 +137,7 @@ function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithA
     if setup["PrintModel"] == 1
         filepath = joinpath(pwd(), "YourModel.lp")
         JuMP.write_to_file(EP, filepath)
-        println("Model Printed")
+        println("Model Printed"); flush(stdout)
     end
 
     return EP
@@ -123,6 +150,8 @@ end
 # original monolithic generate_model, just with investment calls grouped here.
 function planning_model!(EP::Model, setup::Dict, inputs::Dict)
 
+    println(stdout, "--- Building planning model ---"); flush(stdout)
+
     if setup["MinCapReq"] == 1
         create_empty_expression!(EP, :eMinCapRes, inputs["NumberOfMinCapReqs"])
     end
@@ -132,62 +161,62 @@ function planning_model!(EP::Model, setup::Dict, inputs::Dict)
     end
 
     # Infrastructure
-    investment_discharge!(EP, inputs, setup)
+    @timed_module "investment_discharge!" investment_discharge!(EP, inputs, setup)
 
     if inputs["Z"] > 1
-        investment_transmission!(EP, inputs, setup)
+        @timed_module "investment_transmission!" investment_transmission!(EP, inputs, setup)
     end
 
     if !isempty(inputs["STOR_ALL"])
-        investment_storage!(EP, inputs, setup)
+        @timed_module "investment_storage!" investment_storage!(EP, inputs, setup)
     end
 
     if !isempty(inputs["VRE_STOR"])
-        investment_discharge_vre_stor!(EP, inputs, setup)
+        @timed_module "investment_discharge_vre_stor!" investment_discharge_vre_stor!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expression related to retrofit technologies
     if !isempty(inputs["RETROFIT_OPTIONS"])
-        EP = retrofit(EP, inputs)
+        @timed_module "retrofit" EP = retrofit(EP, inputs)
     end
 
     #NEW: Benders-only long-duration storage planning constraints (cross-period state-of-charge)
     if setup["Benders"] == 1 && haskey(inputs, "SubPeriod_Index") && !isempty(inputs["STOR_LONG_DURATION"])
-        long_duration_storage_planning!(EP, inputs, setup)
+        @timed_module "long_duration_storage_planning!" long_duration_storage_planning!(EP, inputs, setup)
     end
 
     #NEW: Benders-only hydro inter-period linkage planning constraints
     if setup["Benders"] == 1 && haskey(inputs, "SubPeriod_Index") && !isempty(inputs["STOR_HYDRO_LONG_DURATION"])
-        hydro_inter_period_linkage_planning!(EP, inputs)
+        @timed_module "hydro_inter_period_linkage_planning!" hydro_inter_period_linkage_planning!(EP, inputs)
     end
 
     # Policies
 
     if setup["MultiStage"] > 0
         # Endogenous Retirements
-        endogenous_retirement!(EP, inputs, setup)
+        @timed_module "endogenous_retirement!" endogenous_retirement!(EP, inputs, setup)
     end
 
     if setup["MinCapReq"] == 1
-        minimum_capacity_requirement!(EP, inputs, setup)
+        @timed_module "minimum_capacity_requirement!" minimum_capacity_requirement!(EP, inputs, setup)
     end
 
     if setup["MaxCapReq"] == 1
-        maximum_capacity_requirement!(EP, inputs, setup)
+        @timed_module "maximum_capacity_requirement!" maximum_capacity_requirement!(EP, inputs, setup)
     end
 
     #NEW: Benders-only planning-phase CO2 cap constraints (annual budget on investment)
     if setup["CO2Cap"] > 0 && setup["Benders"] == 1
-        co2_cap_planning!(EP, inputs, setup)
+        @timed_module "co2_cap_planning!" co2_cap_planning!(EP, inputs, setup)
     end
 
     #NEW: Benders-only planning-phase energy share requirement constraints
     if setup["EnergyShareRequirement"] >= 1 && setup["Benders"] == 1
-        energy_share_requirement_planning!(EP, inputs, setup)
+        @timed_module "energy_share_requirement_planning!" energy_share_requirement_planning!(EP, inputs, setup)
     end
 
     if setup["HydrogenMinimumProduction"] > 0 && setup["Benders"] == 1
-        hydrogen_demand_planning!(EP, inputs, setup)
+        @timed_module "hydrogen_demand_planning!" hydrogen_demand_planning!(EP, inputs, setup)
     end
 end
 
@@ -198,6 +227,8 @@ end
 function operation_model!(EP::Model, setup::Dict, inputs::Dict)
     T = inputs["T"]     # Number of time steps (hours)
     Z = inputs["Z"]     # Number of zones
+
+    println(stdout, "--- Building operation model ---"); flush(stdout)
 
     # Initialize Power Balance Expression
     # Expression for "baseline" power balance constraint
@@ -235,121 +266,121 @@ function operation_model!(EP::Model, setup::Dict, inputs::Dict)
     # The haskey guard prevents double-registration when planning_model! already set up
     # eTotalCap (e.g. via investment_discharge!).
     if setup["Benders"] == 1
-        capacity_decisions!(EP, inputs, setup)
+        @timed_module "capacity_decisions!" capacity_decisions!(EP, inputs, setup)
     end
 
-    discharge!(EP, inputs, setup)
+    @timed_module "discharge!" discharge!(EP, inputs, setup)
 
-    non_served_energy!(EP, inputs, setup)
+    @timed_module "non_served_energy!" non_served_energy!(EP, inputs, setup)
 
     if setup["UCommit"] > 0
-        ucommit!(EP, inputs, setup)
+        @timed_module "ucommit!" ucommit!(EP, inputs, setup)
     end
 
-    fuel!(EP, inputs, setup)
+    @timed_module "fuel!" fuel!(EP, inputs, setup)
 
-    co2!(EP, inputs)
+    @timed_module "co2!" co2!(EP, inputs)
 
     if setup["OperationalReserves"] > 0
-        operational_reserves!(EP, inputs, setup)
+        @timed_module "operational_reserves!" operational_reserves!(EP, inputs, setup)
     end
 
     if Z > 1
-        transmission!(EP, inputs, setup)
+        @timed_module "transmission!" transmission!(EP, inputs, setup)
     end
 
     if Z > 1 && setup["DC_OPF"] != 0
-        dcopf_transmission!(EP, inputs, setup)
+        @timed_module "dcopf_transmission!" dcopf_transmission!(EP, inputs, setup)
     end
 
     # inter-period linkage constraints within each subproblem.
     if (setup["Benders"] == 1 && (!isempty(inputs["STOR_LONG_DURATION"]) || !isempty(inputs["STOR_HYDRO_LONG_DURATION"]))) ||
        (inputs["REP_PERIOD"] > 1 && (!isempty(inputs["STOR_LONG_DURATION"]) || !isempty(inputs["STOR_HYDRO_LONG_DURATION"])))
-        lds_slack!(EP, inputs, setup)
+        @timed_module "lds_slack!" lds_slack!(EP, inputs, setup)
     end
 
     # Technologies
     # Model constraints, variables, expression related to dispatchable renewable resources
     if !isempty(inputs["VRE"])
-        curtailable_variable_renewable!(EP, inputs, setup)
+        @timed_module "curtailable_variable_renewable!" curtailable_variable_renewable!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expression related to non-dispatchable renewable resources
     if !isempty(inputs["MUST_RUN"])
-        must_run!(EP, inputs, setup)
+        @timed_module "must_run!" must_run!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expression related to energy storage modeling
     if !isempty(inputs["STOR_ALL"])
-        storage!(EP, inputs, setup)
+        @timed_module "storage!" storage!(EP, inputs, setup)
         if setup["Benders"] == 1
             if !isempty(inputs["STOR_LONG_DURATION"])
-                long_duration_storage_subperiod!(EP, inputs, setup)
+                @timed_module "long_duration_storage_subperiod!" long_duration_storage_subperiod!(EP, inputs, setup)
             end
         else
             # Include Long Duration Storage only when modeling representative periods and long-duration storage
             if inputs["REP_PERIOD"] > 1 && !isempty(inputs["STOR_LONG_DURATION"])
-                long_duration_storage!(EP, inputs, setup)
+                @timed_module "long_duration_storage!" long_duration_storage!(EP, inputs, setup)
             end
         end
     end
 
     # Model constraints, variables, expression related to reservoir hydropower resources
     if !isempty(inputs["HYDRO_RES"])
-        hydro_res!(EP, inputs, setup)
+        @timed_module "hydro_res!" hydro_res!(EP, inputs, setup)
     end
 
     # Allam Cycle LOX
     if !isempty(inputs["ALLAM_CYCLE_LOX"])
-        allamcyclelox!(EP, inputs, setup)
+        @timed_module "allamcyclelox!" allamcyclelox!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expression related to reservoir hydropower resources with long duration storage
     if setup["Benders"] == 1 && !isempty(inputs["STOR_HYDRO_LONG_DURATION"])
         #NEW: Benders uses subperiod variant of hydro inter-period linkage
-        hydro_inter_period_linkage_subperiod!(EP, inputs)
+        @timed_module "hydro_inter_period_linkage_subperiod!" hydro_inter_period_linkage_subperiod!(EP, inputs)
     elseif inputs["REP_PERIOD"] > 1 && !isempty(inputs["STOR_HYDRO_LONG_DURATION"])
-        hydro_inter_period_linkage!(EP, inputs, setup)
+        @timed_module "hydro_inter_period_linkage!" hydro_inter_period_linkage!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expression related to demand flexibility resources
     if !isempty(inputs["FLEX"])
-        flexible_demand!(EP, inputs, setup)
+        @timed_module "flexible_demand!" flexible_demand!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expression related to thermal resource technologies
     if !isempty(inputs["THERM_ALL"])
-        thermal!(EP, inputs, setup)
+        @timed_module "thermal!" thermal!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expressions related to the co-located VRE-storage resources
     # (Benders case with VRE_STOR already errored at generate_model entry point)
     if !isempty(inputs["VRE_STOR"])
         if (setup["Benders"] == 1 && haskey(inputs, "SubPeriod_Index") && !isempty(inputs["VS_LDS"])) || (inputs["REP_PERIOD"] > 1 && !isempty(inputs["VS_LDS"]))
-            vre_stor_lds_slack!(EP, inputs, setup)
+            @timed_module "vre_stor_lds_slack!" vre_stor_lds_slack!(EP, inputs, setup)
         end
-        vre_stor!(EP, inputs, setup)
+        @timed_module "vre_stor!" vre_stor!(EP, inputs, setup)
     end
 
     # Model constraints, variables, expressions related to electrolyzers.
     # Also active for VRE-STOR cases that embed an electrolyzer (VS_ELEC).
     if !isempty(inputs["ELECTROLYZER"]) || (!isempty(inputs["VRE_STOR"]) && !isempty(inputs["VS_ELEC"]))
-        electrolyzer!(EP, inputs, setup)
+        @timed_module "electrolyzer!" electrolyzer!(EP, inputs, setup)
     end
 
     # Policies
 
     if setup["OperationalReserves"] > 0
-        operational_reserves_constraints!(EP, inputs)
+        @timed_module "operational_reserves_constraints!" operational_reserves_constraints!(EP, inputs)
     end
 
     # CO2 emissions limits
     if setup["CO2Cap"] > 0
         if setup["Benders"] == 1
             #NEW: Benders uses subperiod-scaled CO2 cap for each operational subproblem
-            co2_cap_subperiod!(EP, inputs, setup)
+            @timed_module "co2_cap_subperiod!" co2_cap_subperiod!(EP, inputs, setup)
         else
-            co2_cap!(EP, inputs, setup)
+            @timed_module "co2_cap!" co2_cap!(EP, inputs, setup)
         end
     end
 
@@ -357,28 +388,28 @@ function operation_model!(EP::Model, setup::Dict, inputs::Dict)
     if setup["EnergyShareRequirement"] >= 1
         if setup["Benders"] == 1
             #NEW: Benders uses subperiod-scaled ESR for each operational subproblem
-            energy_share_requirement_subperiod!(EP, inputs, setup)
+            @timed_module "energy_share_requirement_subperiod!" energy_share_requirement_subperiod!(EP, inputs, setup)
         else
-            energy_share_requirement!(EP, inputs, setup)
+            @timed_module "energy_share_requirement!" energy_share_requirement!(EP, inputs, setup)
         end
     end
 
     # Hourly Matching Requirement
     if setup["HourlyMatchingRequirement"] == 1
-        hourly_matching!(EP, inputs) #TODO: Handle this with Benders too
+        @timed_module "hourly_matching!" hourly_matching!(EP, inputs) #TODO: Handle this with Benders too
     end
 
     # Capacity Reserve Margin
     if setup["CapacityReserveMargin"] > 0
-        cap_reserve_margin!(EP, inputs, setup)
+        @timed_module "cap_reserve_margin!" cap_reserve_margin!(EP, inputs, setup)
     end
 
     # Hydrogen demand limits
     if setup["HydrogenMinimumProduction"] > 0
         if setup["Benders"] == 1
-            hydrogen_demand_subperiod!(EP, inputs, setup)
+            @timed_module "hydrogen_demand_subperiod!" hydrogen_demand_subperiod!(EP, inputs, setup)
         else
-            hydrogen_demand!(EP, inputs, setup)
+            @timed_module "hydrogen_demand!" hydrogen_demand!(EP, inputs, setup)
         end
     end
 
@@ -603,7 +634,7 @@ function generate_model_legacy(setup::Dict, inputs::Dict, OPTIMIZER::MOI.Optimiz
     if setup["PrintModel"] == 1
         filepath = joinpath(pwd(), "YourModel.lp")
         JuMP.write_to_file(EP, filepath)
-        println("Model Printed")
+        println("Model Printed"); flush(stdout)
     end
 
     return EP
