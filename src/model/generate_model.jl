@@ -108,7 +108,12 @@ function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithA
     else
         Model(OPTIMIZER)
     end
-    #set_string_names_on_creation(EP, Bool(setup["EnableJuMPStringNames"]))
+    # Skip allocating a String name for every variable/constraint (Pillar 2). Defaults to false
+    # (configure_settings.jl) and is forced back on when ComputeConflicts==1. This is the same call
+    # the operational build path below (~l446) already makes; it is a major memory win at large T,
+    # where the per-element name allocation scales with the model size. Writers use the symbolic
+    # EP[:symbol] bindings, not string names.
+    set_string_names_on_creation(EP, Bool(setup["EnableJuMPStringNames"]))
 
     # Initialize Objective Function Expression
     EP[:eObj] = AffExpr(0.0)

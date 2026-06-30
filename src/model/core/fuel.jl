@@ -96,6 +96,11 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     SINGLE_FUEL = inputs["SINGLE_FUEL"]
     ALLAM_CYCLE_LOX = inputs["ALLAM_CYCLE_LOX"]
 
+    # O(1) membership for the per-(y, t) branch tests in the G*T expressions below. Built once
+    # instead of re-scanning the Vector `y in SET` for every (y, t) (G*T linear scans — Pillar 3).
+    THERM_COMMIT_set = BitSet(THERM_COMMIT)
+    SINGLE_FUEL_set = BitSet(SINGLE_FUEL)
+
     # Precomputed zone -> resource incidence (Part 1.0), instead of rebuilding it per zone.
     RESOURCES_BY_ZONE = inputs["RESOURCES_BY_ZONE"]
 
@@ -137,7 +142,7 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     # Fuel consumed on start-up (MMBTU or kMMBTU (scaled)) 
     # if unit commitment is modelled
     @expression(EP, eStartFuel[y in 1:G, t = 1:T],
-        if y in THERM_COMMIT
+        if y in THERM_COMMIT_set
             (cap_size(gen[y]) * EP[:vSTART][y, t] *
              start_fuel_mmbtu_per_mw(gen[y]))
         else
@@ -146,13 +151,13 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
 
     # time-series fuel consumption by plant 
     @expression(EP, ePlantFuel_generation[y in 1:G, t = 1:T],
-        if y in SINGLE_FUEL   # for single fuel plants
+        if y in SINGLE_FUEL_set   # for single fuel plants
             EP[:vFuel][y, t]
         else # for multi fuel plants
             sum(EP[:vMulFuels][y, i, t] for i in 1:max_fuels)
         end)
     @expression(EP, ePlantFuel_start[y in 1:G, t = 1:T],
-        if y in SINGLE_FUEL   # for single fuel plants
+        if y in SINGLE_FUEL_set   # for single fuel plants
             EP[:vStartFuel][y, t]
         else # for multi fuel plants
             sum(EP[:vMulStartFuels][y, i, t] for i in 1:max_fuels)
@@ -187,7 +192,7 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     @expression(EP, eCFuelStart[y = 1:G, t = 1:T],
-        if y in SINGLE_FUEL
+        if y in SINGLE_FUEL_set
             (fuel_costs[fuel(gen[y])][t] * EP[:vStartFuel][y, t])
         else
             sum(EP[:eCFuelOut_multi_start][y, i, t] for i in 1:max_fuels)
@@ -212,7 +217,7 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     @expression(EP, eCFuelOut[y = 1:G, t = 1:T],
-        if y in SINGLE_FUEL
+        if y in SINGLE_FUEL_set
             (fuel_costs[fuel(gen[y])][t] * EP[:vFuel][y, t])
         else
             sum(EP[:eCFuelOut_multi][y, i, t] for i in 1:max_fuels)

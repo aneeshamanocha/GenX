@@ -67,18 +67,19 @@ function non_served_energy!(EP::Model, inputs::Dict, setup::Dict)
 
     ## Objective Function Expressions ##
 
-    # Cost of non-served energy/curtailed demand at hour "t" in zone "z"
-    @expression(EP,
-        eCNSE[s = 1:SEG, t = 1:T, z = 1:Z],
-        (inputs["omega"][t]*inputs["pC_D_Curtail"][s]*vNSE[s, t, z]))
+    # Cost of non-served energy/curtailed demand. Bind typed locals once: inputs is Dict{String,Any},
+    # so a per-element inputs["omega"][t]/inputs["pC_D_Curtail"][s] lookup is an Any-typed, boxing
+    # access repeated SEG*T*Z times (Pillar 1). Accumulate the cost per zone directly (eZonalCNSE)
+    # instead of materializing the full SEG*T*Z eCNSE array only to sum it away (Pillar 2). eZonalCNSE
+    # is what the zonal cost writer (write_costs.jl) needs; the old eTotalCNSETZ/eTotalCNSET
+    # intermediates were unused elsewhere.
+    omega = inputs["omega"]::Vector{Float64}
+    pC = inputs["pC_D_Curtail"]::Vector{Float64}
+    @expression(EP, eZonalCNSE[z = 1:Z],
+        sum(omega[t] * pC[s] * vNSE[s, t, z] for s in 1:SEG, t in 1:T))
 
-    # Sum individual demand segment contributions to non-served energy costs to get total non-served energy costs
-    # Julia is fastest when summing over one row one column at a time
-    @expression(EP, eTotalCNSETZ[t = 1:T, s = 1:SEG], sum(eCNSE[s, t, z] for z in 1:Z))
-    @expression(EP, eTotalCNSET[t = 1:T], sum(eTotalCNSETZ[t, s] for s in 1:SEG))
-    @expression(EP, eTotalCNSE, sum(eTotalCNSET[t] for t in 1:T))
-
-    # Add total cost contribution of non-served energy/curtailed demand to the objective function
+    # Sum the zonal non-served-energy costs to the total and add it to the objective function.
+    @expression(EP, eTotalCNSE, sum(eZonalCNSE[z] for z in 1:Z))
     add_to_expression!(EP[:eObj], eTotalCNSE)
 
     ## Power Balance Expressions ##

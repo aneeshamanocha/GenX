@@ -308,7 +308,7 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
             end
         end
 
-        tempCNSE = sum(value.(EP[:eCNSE][:, :, z]))
+        tempCNSE = value(EP[:eZonalCNSE][z])
         tempCTotal += tempCNSE
 
         # if any(dfGen.CO2_Capture_Fraction .!=0)
