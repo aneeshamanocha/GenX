@@ -15,8 +15,6 @@ For must-run resources ($y\in \mathcal{MR}$) output in each time period $t$ must
 function must_run!(EP::Model, inputs::Dict, setup::Dict)
     println("Must-Run Resources Module")
 
-    gen = inputs["RESOURCES"]
-
     T = inputs["T"]     # Number of time steps (hours)
     Z = inputs["Z"]     # Number of zones
     G = inputs["G"] # Number of generators
@@ -27,9 +25,11 @@ function must_run!(EP::Model, inputs::Dict, setup::Dict)
     ### Expressions ###
 
     ## Power Balance Expressions ##
-    MUST_RUN_BY_ZONE = map(1:Z) do z
-        return intersect(MUST_RUN, resources_in_zone_by_rid(gen, z))
-    end
+    # Look up must-run resources per zone from the precomputed incidence (Part 1.0) with O(1)
+    # membership, instead of rebuilding resources_in_zone_by_rid(gen, z) per zone.
+    MUST_RUN_set = BitSet(MUST_RUN)
+    MUST_RUN_BY_ZONE = [filter(y -> y in MUST_RUN_set, rids)
+                        for rids in inputs["RESOURCES_BY_ZONE"]]
     @expression(EP, ePowerBalanceNdisp[t = 1:T, z = 1:Z],
         sum(EP[:vP][y, t] for y in MUST_RUN_BY_ZONE[z]))
     add_similar_to_expression!(EP[:ePowerBalance], ePowerBalanceNdisp)

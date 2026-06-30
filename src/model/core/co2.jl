@@ -63,6 +63,8 @@ function co2!(EP::Model, inputs::Dict)
 
     fuel_CO2 = inputs["fuel_CO2"] # CO2 content of fuel (t CO2/MMBTU or ktCO2/Billion BTU)
     omega = inputs["omega"]
+    # Precomputed zone -> resource incidence (Part 1.0), instead of rebuilding it per zone.
+    RESOURCES_BY_ZONE = inputs["RESOURCES_BY_ZONE"]
     if !isempty(MULTI_FUELS)
         max_fuels = inputs["MAX_NUM_FUELS"]
     end
@@ -125,7 +127,7 @@ function co2!(EP::Model, inputs::Dict)
 
         @expression(EP, eZonalCCO2Sequestration[z = 1:Z],
             sum(ePlantCCO2Sequestration[y]
-            for y in intersect(resources_in_zone_by_rid(gen, z), CCS)))
+            for y in intersect(RESOURCES_BY_ZONE[z], CCS)))
 
         @expression(EP, eTotaleCCO2Sequestration,
             sum(eZonalCCO2Sequestration[z] for z in 1:Z))
@@ -134,9 +136,6 @@ function co2!(EP::Model, inputs::Dict)
     end
 
     # emissions by zone
-    RESOURCES_BY_ZONE = map(1:Z) do z
-        return resources_in_zone_by_rid(gen, z)
-    end
     @expression(EP, eEmissionsByZone[z = 1:Z, t = 1:T],
         sum(eEmissionsByPlant[y, t] for y in RESOURCES_BY_ZONE[z]))
     return EP

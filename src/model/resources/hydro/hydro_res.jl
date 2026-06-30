@@ -103,9 +103,11 @@ function hydro_res!(EP::Model, inputs::Dict, setup::Dict)
     ### Expressions ###
 
     ## Power Balance Expressions ##
-    HYDRO_RES_BY_ZONE = map(1:Z) do z
-        return intersect(HYDRO_RES, resources_in_zone_by_rid(gen, z))
-    end
+    # Look up hydro reservoir resources per zone from the precomputed incidence (Part 1.0)
+    # with O(1) membership, instead of rebuilding resources_in_zone_by_rid(gen, z) per zone.
+    HYDRO_RES_set = BitSet(HYDRO_RES)
+    HYDRO_RES_BY_ZONE = [filter(y -> y in HYDRO_RES_set, rids)
+                         for rids in inputs["RESOURCES_BY_ZONE"]]
     @expression(EP, ePowerBalanceHydroRes[t = 1:T, z = 1:Z],
         sum(EP[:vP][y, t] for y in HYDRO_RES_BY_ZONE[z]))
     add_similar_to_expression!(EP[:ePowerBalance], ePowerBalanceHydroRes)

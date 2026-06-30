@@ -139,7 +139,6 @@ The above reserve related constraints are established by ```storage_all_operatio
 """
 function storage!(EP::Model, inputs::Dict, setup::Dict)
     println("Storage Resources Module")
-    gen = inputs["RESOURCES"]
     T = inputs["T"]
     STOR_ALL = inputs["STOR_ALL"]
 
@@ -168,10 +167,13 @@ function storage!(EP::Model, inputs::Dict, setup::Dict)
         nESR = inputs["nESR"]
         dfESR = inputs["dfESR"]
         if IncludeLossesInESR == 1
+            # Look up storage resources per zone from the precomputed incidence (Part 1.0).
+            STOR_ALL_set = BitSet(STOR_ALL)
+            resources_by_zone = inputs["RESOURCES_BY_ZONE"]
             @expression(EP,
                 eESRStor[ESR = 1:nESR],
                 sum(dfESR[z, ESR] * sum(EP[:eELOSS][y]
-                    for y in intersect(resources_in_zone_by_rid(gen, z), STOR_ALL))
+                    for y in filter(yy -> yy in STOR_ALL_set, resources_by_zone[z]))
                 for z in findall(x -> x > 0, dfESR[:, ESR])))
             add_similar_to_expression!(EP[:eESR], -1.0, eESRStor)
         end

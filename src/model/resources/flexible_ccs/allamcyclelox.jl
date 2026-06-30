@@ -132,9 +132,14 @@ function allamcyclelox!(EP::Model, inputs::Dict, setup::Dict)
     # link vP, vCHARGE_ALLAM, and eP_Allam
     @constraint(EP, cCharge[y in ALLAM_CYCLE_LOX, t = 1:T], vOutput_AllamcycleLOX[y, asu, t] >= vCHARGE_ALLAM[y,t])
     @constraint(EP, cP_net[y in ALLAM_CYCLE_LOX, t = 1:T], eP_Allam[y, t] == EP[:vP][y,t])
+    # Look up Allam cycle resources per zone from the precomputed incidence (Part 1.0) with O(1)
+    # membership, instead of rebuilding resources_in_zone_by_rid(gen, z) per zone (used twice below).
+    ALLAM_CYCLE_LOX_set = BitSet(ALLAM_CYCLE_LOX)
+    ALLAM_CYCLE_LOX_BY_ZONE = [filter(y -> y in ALLAM_CYCLE_LOX_set, rids)
+                               for rids in inputs["RESOURCES_BY_ZONE"]]
     @expression(EP, ePowerBalanceAllam[t = 1:T, z = 1:Z],
         sum((eP_Allam[y,t] - vCHARGE_ALLAM[y,t])
-        for y in intersect(ALLAM_CYCLE_LOX, resources_in_zone_by_rid(gen, z))))
+        for y in ALLAM_CYCLE_LOX_BY_ZONE[z]))
     add_similar_to_expression!(EP[:ePowerBalance], ePowerBalanceAllam)
     
     # Constraint 3: all the allam cycle output should be less than the capacity
@@ -158,7 +163,7 @@ function allamcyclelox!(EP::Model, inputs::Dict, setup::Dict)
     # sum to annual level 
     @expression(EP, eCVar_Allam[y in ALLAM_CYCLE_LOX], sum(eCVar_component[y,i,t] for i in 1:3 for t in 1:T))
     # sum to zonal-annual level
-    @expression(EP, eZonalCVar_Allam[z = 1:Z], sum(eCVar_Allam[y] for y in intersect(ALLAM_CYCLE_LOX, resources_in_zone_by_rid(gen, z))))
+    @expression(EP, eZonalCVar_Allam[z = 1:Z], sum(eCVar_Allam[y] for y in ALLAM_CYCLE_LOX_BY_ZONE[z]))
     # system level VOM
     @expression(EP, eTotalCVar_Allam, sum(eZonalCVar_Allam[z] for z in 1:Z))
    

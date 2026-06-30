@@ -1415,6 +1415,18 @@ function add_resources_to_input_data!(inputs::Dict,
     inputs["R_ZONES"] = zones
     inputs["RESOURCE_ZONES"] = inputs["RESOURCE_NAMES"] .* "_z" .* string.(zones)
 
+    #NEW: Precompute zone -> resource R_IDs once (Vector{Vector{Int}}) so resource modules can look
+    # up "resources in zone z" in O(1) instead of rebuilding resources_in_zone_by_rid(gen, z) (an
+    # O(G) broadcast+filter) per zone, per module. See diagnostics/build_plan.md Part 1.0.
+    Z = inputs["Z"]
+    rids = resource_id.(gen) # Array of every id for the resources
+    resources_by_zone = [Int[] for _ in 1:Z] # Z empty bins, one per zone
+    for i in eachindex(gen)
+        z = zones[i]
+        1 <= z <= Z && push!(resources_by_zone[z], rids[i])
+    end
+    inputs["RESOURCES_BY_ZONE"] = resources_by_zone
+
     # Fuel
     inputs["HAS_FUEL"] = ids_with_fuel(gen)
     if !isempty(inputs["MULTI_FUELS"])

@@ -24,9 +24,11 @@ function thermal!(EP::Model, inputs::Dict, setup::Dict)
         thermal_no_commit!(EP, inputs, setup)
     end
     ##CO2 Polcy Module Thermal Generation by zone
-    THERM_ALL_BY_ZONE = map(1:Z) do z
-        return intersect(THERM_ALL, resources_in_zone_by_rid(gen, z))
-    end
+    # Look up thermal resources per zone from the precomputed incidence (Part 1.0) with O(1)
+    # membership, instead of rebuilding resources_in_zone_by_rid(gen, z) per zone.
+    THERM_ALL_set = BitSet(THERM_ALL)
+    THERM_ALL_BY_ZONE = [filter(y -> y in THERM_ALL_set, rids)
+                         for rids in inputs["RESOURCES_BY_ZONE"]]
     @expression(EP, eGenerationByThermAll[z = 1:Z, t = 1:T], # the unit is GW
         sum(EP[:vP][y, t]
         for y in THERM_ALL_BY_ZONE[z]))

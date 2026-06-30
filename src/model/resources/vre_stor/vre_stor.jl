@@ -61,9 +61,11 @@ function vre_stor!(EP::Model, inputs::Dict, setup::Dict)
 
     # Note: The subtraction of the charging component can be found in STOR function
     @expression(EP, ePowerBalance_VRE_STOR[t = 1:T, z = 1:Z], JuMP.AffExpr())
-    gen_VRE_STOR_BY_ZONE = map(1:Z) do z
-        return resources_in_zone_by_rid(gen_VRE_STOR, z)
-    end
+    # Look up VRE-STOR resources per zone from the precomputed incidence (Part 1.0) with O(1)
+    # membership, instead of rebuilding resources_in_zone_by_rid(gen_VRE_STOR, z) per zone.
+    VRE_STOR_set = BitSet(VRE_STOR)
+    gen_VRE_STOR_BY_ZONE = [filter(y -> y in VRE_STOR_set, rids)
+                            for rids in inputs["RESOURCES_BY_ZONE"]]
     for t in 1:T, z in 1:Z
         if !isempty(gen_VRE_STOR_BY_ZONE[z])
             for y in gen_VRE_STOR_BY_ZONE[z]
@@ -522,13 +524,11 @@ function stor_vre_stor!(EP::Model, inputs::Dict, setup::Dict)
         add_to_expression!(EP[:eGridExport][y, t], vCHARGE_VRE_STOR[y, t])
     end
 
-    gen_VRE_STOR_BY_ZONE_AND_STOR = map(1:Z) do z
-        resources_in_zone = resources_in_zone_by_rid(gen_VRE_STOR, z)
-        if isempty(resources_in_zone)
-            return resources_in_zone
-        end
-        return intersect(resources_in_zone, STOR)
-    end
+    # VRE-STOR resources with a storage component, per zone, from the precomputed incidence
+    # (Part 1.0). STOR ⊆ VRE_STOR, so filtering the cached buckets to STOR suffices.
+    STOR_set = BitSet(STOR)
+    gen_VRE_STOR_BY_ZONE_AND_STOR = [filter(y -> y in STOR_set, rids)
+                                     for rids in inputs["RESOURCES_BY_ZONE"]]
     for z in 1:Z, t in 1:T
         if !isempty(gen_VRE_STOR_BY_ZONE_AND_STOR[z])
             for y in gen_VRE_STOR_BY_ZONE_AND_STOR[z]

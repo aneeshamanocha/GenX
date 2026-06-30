@@ -96,9 +96,8 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     SINGLE_FUEL = inputs["SINGLE_FUEL"]
     ALLAM_CYCLE_LOX = inputs["ALLAM_CYCLE_LOX"]
 
-    RESOURCES_BY_ZONE = map(1:Z) do z
-        return resources_in_zone_by_rid(gen, z)
-    end
+    # Precomputed zone -> resource incidence (Part 1.0), instead of rebuilding it per zone.
+    RESOURCES_BY_ZONE = inputs["RESOURCES_BY_ZONE"]
 
     fuels = inputs["fuels"]
     fuel_costs = inputs["fuel_costs"]

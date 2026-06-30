@@ -94,9 +94,11 @@ function storage_all!(EP::Model, inputs::Dict, setup::Dict)
 
     ## Power Balance Expressions ##
 
-    STOR_ALL_BY_ZONE = map(1:Z) do z
-        return intersect(STOR_ALL, resources_in_zone_by_rid(gen, z))
-    end
+    # Look up storage resources per zone from the precomputed incidence (Part 1.0) with O(1)
+    # membership, instead of rebuilding resources_in_zone_by_rid(gen, z) per zone.
+    STOR_ALL_set = BitSet(STOR_ALL)
+    STOR_ALL_BY_ZONE = [filter(y -> y in STOR_ALL_set, rids)
+                        for rids in inputs["RESOURCES_BY_ZONE"]]
     # Term to represent net dispatch from storage in any period
     @expression(EP, ePowerBalanceStor[t = 1:T, z = 1:Z],
         sum(vP[y, t] - vCHARGE[y, t]
@@ -154,9 +156,10 @@ function storage_all!(EP::Model, inputs::Dict, setup::Dict)
     storage_all_operation!(EP, inputs, setup)
 
     # From CO2 Policy module
+    # Reuse the per-zone storage buckets built above (Part 1.0) instead of a second incidence pass.
     expr = @expression(EP,
         [z = 1:Z],
-        sum(eELOSS[y] for y in intersect(STOR_ALL, resources_in_zone_by_rid(gen, z))))
+        sum(eELOSS[y] for y in STOR_ALL_BY_ZONE[z]))
     add_similar_to_expression!(EP[:eELOSSByZone], expr)
 
     # Capacity Reserve Margin policy

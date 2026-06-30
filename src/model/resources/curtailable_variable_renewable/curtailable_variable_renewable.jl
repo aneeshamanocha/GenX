@@ -37,7 +37,10 @@ function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
 
     ## Power Balance Expressions ##
 
-    VRE_BY_ZONE = [intersect(VRE, resources_in_zone_by_rid(gen, z)) for z in 1:Z]
+    # Look up VRE resources per zone from the precomputed incidence (Part 1.0) with O(1) membership,
+    # instead of rebuilding resources_in_zone_by_rid(gen, z) per zone.
+    VRE_set = BitSet(VRE)
+    VRE_BY_ZONE = [filter(y -> y in VRE_set, rids) for rids in inputs["RESOURCES_BY_ZONE"]]
     @expression(EP, ePowerBalanceDisp[t = 1:T, z = 1:Z],
         sum(EP[:vP][y, t] for y in VRE_BY_ZONE[z]))
     add_similar_to_expression!(EP[:ePowerBalance], EP[:ePowerBalanceDisp])

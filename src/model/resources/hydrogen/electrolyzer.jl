@@ -84,9 +84,11 @@ function electrolyzer!(EP::Model, inputs::Dict, setup::Dict)
     ### Expressions ###
 
     ## Power Balance Expressions ##
-    ELECTROLYZERS_BY_ZONE = map(1:Z) do z
-        return intersect(ELECTROLYZERS, resources_in_zone_by_rid(gen, z))
-    end
+    # Look up electrolyzer resources per zone from the precomputed incidence (Part 1.0) with
+    # O(1) membership, instead of rebuilding resources_in_zone_by_rid(gen, z) per zone.
+    ELECTROLYZERS_set = BitSet(ELECTROLYZERS)
+    ELECTROLYZERS_BY_ZONE = [filter(y -> y in ELECTROLYZERS_set, rids)
+                             for rids in inputs["RESOURCES_BY_ZONE"]]
     @expression(EP, ePowerBalanceElectrolyzers[t in 1:T, z in 1:Z],
         sum(EP[:vUSE][y, t]
         for y in ELECTROLYZERS_BY_ZONE[z]))
