@@ -66,8 +66,10 @@ function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
         for y in VRE_POWER_OUT
             # Define the set of generator indices corresponding to the different sites (or bins) of a particular VRE technology (E.g. wind or solar) in a particular zone.
             # For example the wind resource in a particular region could be include three types of bins corresponding to different sites with unique interconnection, hourly capacity factor and maximim available capacity limits.
-            VRE_BINS = intersect(resource_id.(gen[resource_id.(gen) .>= y]),
-                resource_id.(gen[resource_id.(gen) .<= y + num_vre_bins(gen[y]) - 1]))
+            # The bins are a contiguous block of resource ids starting at y, so use the range
+            # directly (same form as `resources_in_bin` in the reserves path) instead of two
+            # full-G broadcasts + an intersect per VRE resource (was O(VRE x G)).
+            VRE_BINS = UnitRange(y, y + num_vre_bins(gen[y]) - 1)
 
             # Maximum power generated per hour by renewable generators must be less than
             # sum of product of hourly capacity factor for each bin times its the bin installed capacity
