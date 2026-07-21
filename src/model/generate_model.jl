@@ -6,18 +6,35 @@
 # Note: for Benders this retains only the last generate_model call's modules.
 const MODULE_BUILD_TIMES = Pair{String, Float64}[]
 
-#NEW: Lightweight timing wrapper for model-building modules. Runs `expr`, records its
-# elapsed wall-clock time in MODULE_BUILD_TIMES, then prints it and flushes stdout
-# immediately so per-module progress is visible during long builds (important on
-# clusters where stdout is block-buffered).
+#NEW: Opt-in stash of the most recent model, for post-build diagnostics that need the JuMP object
+# after run_genx_case! returns (which otherwise discards it). Only populated when the env var
+# GENX_MATRIX_REPORT=1 is set (diagnostics/matrix_report.jl + run_tests.jl), so normal runs never
+# retain the model. Holds the *solved* model after run_genx_case!, so κ is available too.
+const LAST_MODEL = Base.RefValue{Any}(nothing)
+
+#NEW: Lightweight timing wrapper for model-building modules. Runs `expr` under Base.@timed,
+# records its elapsed wall-clock time in MODULE_BUILD_TIMES, then prints a per-module line and
+# flushes stdout immediately so progress is visible during long builds (important on clusters
+# where stdout is block-buffered).
+# The wall-clock time is also split into GC vs. compute and reported alongside bytes allocated.
+# This matters at large T: a module that allocates while the live heap is already large gets
+# charged for GC passes over the whole heap, so it can look slow without doing heavy work of its
+# own. The gc% / GiB columns separate "genuinely heavy" from "paying the heap's GC tax".
+# MODULE_BUILD_TIMES still holds wall-clock seconds only, so diagnostics/run_tests.jl
+# (build_times.csv) is unaffected.
 # Usage: @timed_module "discharge!" discharge!(EP, inputs, setup)
 macro timed_module(label, expr)
     return quote
-        local _t0 = time()
-        $(esc(expr))
-        local _elapsed = time() - _t0
+        local _stats = Base.@timed $(esc(expr))
+        local _elapsed = _stats.time
+        local _gc = _stats.gctime
+        local _gib = _stats.bytes / 2^30
         push!(MODULE_BUILD_TIMES, $(esc(label)) => _elapsed)
-        println(stdout, "  ", rpad($(esc(label)), 42), lpad(round(_elapsed, digits = 3), 9), " s")
+        println(stdout, "  ", rpad($(esc(label)), 42),
+            lpad(round(_elapsed, digits = 3), 9), " s",
+            lpad(round(_gc, digits = 3), 9), " s gc",
+            lpad(round(100 * _gc / max(_elapsed, eps()), digits = 1), 6), "% gc",
+            lpad(round(_gib, digits = 2), 9), " GiB")
         flush(stdout)
     end
 end
@@ -143,6 +160,12 @@ function generate_model(setup::Dict, inputs::Dict, OPTIMIZER::MOI.OptimizerWithA
         filepath = joinpath(pwd(), "YourModel.lp")
         JuMP.write_to_file(EP, filepath)
         println("Model Printed"); flush(stdout)
+    end
+
+    #NEW: opt-in stash for post-build matrix diagnostics (see LAST_MODEL). Off by default so
+    # normal runs never retain the model; run_tests.jl sets GENX_MATRIX_REPORT=1.
+    if get(ENV, "GENX_MATRIX_REPORT", "0") == "1"
+        LAST_MODEL[] = EP
     end
 
     return EP
