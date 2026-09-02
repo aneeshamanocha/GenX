@@ -88,6 +88,9 @@ function run_genx_case_simple!(case::AbstractString, mysetup::Dict, optimizer::A
     println("Time elapsed for model building is")
     println(time_elapsed); flush(stdout)
 
+    t_mps = @elapsed write_to_file(EP, "model_test.mps")
+    println("MPS write: $(t_mps)s, size = $(filesize("model_test.mps") / 1e9) GB")
+
     println("Solving Model"); flush(stdout)
     EP, solve_time = solve_model(EP, mysetup)
     myinputs["solve_time"] = solve_time # Store the model solve time in myinputs

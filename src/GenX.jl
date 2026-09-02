@@ -43,6 +43,7 @@ using Distributed
 using DistributedArrays
 using ClusterManagers
 using SparseArrays
+using JLD2
 
 using PrecompileTools: @compile_workload
 
