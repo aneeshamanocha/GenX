@@ -121,6 +121,13 @@ Modules = [GenX]
 Pages = ["write_reserve_margin_revenue.jl"]
 ```
 
+## Write Hourly Matching Revenue
+```@docs
+GenX.write_hourly_matching_prices
+GenX.write_hourly_matching_revenue
+GenX.write_hourly_matching_slack
+```
+
 ## Write Energy Share Requirement Revenue
 ```@autodocs
 Modules = [GenX]
@@ -172,4 +179,27 @@ GenX.write_angles
 ## Write Settings Files
 ```@docs
 GenX.write_settings_file
+```
+
+## Write Allam Cycle LOX
+```@docs
+GenX.write_allam_capacity
+GenX.write_allam_output
+```
+
+## Write Transmission Outputs
+When discrete new lines are present (`DiscreteInvestments = 1`), `load_network_data!` gives each
+candidate line its own row, so the solved model has more lines than the user's `Network.csv`. These
+writers fold the expanded lines back onto the original corridors using
+`inputs["LINE_MAP_ORIGINAL"]`, so the outputs are indexed by the corridors the user supplied. See
+[DC-OPF and Transmission Expansion](@ref).
+```@autodocs
+Modules = [GenX]
+Pages = ["write_transmission_flows.jl", "write_transmission_losses.jl", "write_nw_expansion.jl"]
+```
+
+## Write Benders Decomposition Outputs
+```@autodocs
+Modules = [GenX]
+Pages = ["write_benders_output.jl", "write_planning_problem_costs.jl"]
 ```

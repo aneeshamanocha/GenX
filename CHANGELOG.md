@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+- Added `MacroEnergySolvers` (v0.2) as a package dependency, providing shared solver infrastructure used by the Benders decomposition framework.
+- Added `Gurobi` as a weak dependency with a `GenXGurobiExt` package extension, making Gurobi support optional and loaded only when the `Gurobi` package is available in the environment.
+- Core Benders decomposition framework in new `src/benders/` directory: `benders_planning_problem.jl` (master problem / investment stage), `benders_subproblems.jl` (operational subproblems per representative period), `benders_utility.jl` (shared cut/convergence/logging utilities), and `write_benders_output.jl` (result aggregation from subproblems). Includes `src/configure_solver/configure_benders.jl` for solver configuration.
+- VRE-STOR capacity investment support for Benders decomposition via new `src/model/resources/vre_stor/investment_vre_stor.jl`, adding investment decisions and linking constraints for co-located VRE+storage resources in the master problem.
+- Benders-specific policy modules for CO2 cap (`co2_cap.jl`), energy share requirement (`energy_share_requirement.jl`), and hydrogen demand (`hydrogen_demand.jl`), ensuring dual prices from each subproblem feed back into optimality cuts.
+- Benders-specific resource modules for hydro inter-period linkage (`hydro_inter_period_linkage.jl`) and long-duration storage (`long_duration_storage.jl`), supporting state-of-charge linking across representative periods in the subproblems.
+- Benders decomposition documentation: user guide at `docs/src/User_Guide/benders_decomposition.md` and mathematical overview at `docs/src/Model_Concept_Overview/benders_math_overview.md`; updated `docs/make.jl`, `examples_casestudies.md`, `model_configuration.md`, and `developer_guide.md` to cover Benders usage and code structure.
+- Benders test suite: `test/test_benders_vs_monolithic.jl` validates that Benders and monolithic solves produce consistent objective values across example systems.
+- Added `Run_benders.jl` entry point scripts to example systems 1–5, 7, 10, and 11, enabling Benders decomposition runs for each of those cases.
+- A generalized hourly matching policy module.
+- Benders decomposition output now writes additional files matching the monolithic solver: `prices.csv`, `reliability.csv`, `storagebal_duals.csv`, `capacityfactor.csv`, `time_weights.csv`, `EnergyRevenue.csv`, `ChargingCost.csv`, `commit.csv`, `start.csv`, `shutdown.csv` (when UCommit≥1), `CO2_prices_and_penalties.csv` (when CO2Cap>0), and `SubsidyRevenue.csv`/`RegSubsidyRevenue.csv` (when MinCap/MinCapReq is active).
+- DC-OPF transmission expansion: `NetworkExpansion` can now be combined with `DC_OPF: 1`, so line capacity is a decision variable while the linearized DC power-flow physics (phase angles, flow–angle coupling, angle-difference limits) are still enforced. New `src/model/core/transmission/dcopf_transmission.jl` splits lines into discrete-candidate and fixed sets and applies the flow–angle coupling and angle limits appropriately to each.
+- Discrete (integer) transmission builds via a new `DiscreteInvestments` setting flag and a `Discrete_Build` column in `Network.csv`. A corridor flagged `Discrete_Build = 1` is expanded as one or more fixed-size new circuits (`New_Line_Cap_Size_MW`), each with a binary build decision (`vNEW_TRANS_LINES`), instead of the continuous `vNEW_TRANS_CAP` reinforcement. The number of candidate circuits is derived from `floor(Line_Max_Reinforcement_MW / New_Line_Cap_Size_MW)` at load time, with each candidate becoming its own internal line.
+- Build-gated DC-OPF physics for discrete candidate lines: an unbuilt candidate line imposes no flow–angle coupling, so a greenfield corridor constrains phase angles only once at least one circuit is actually built. Candidates on a corridor with no fixed line (`NEW_CORRIDOR_DISCRETE_LINES`) additionally carry a build-gated angle-difference limit, since nothing else can supply the corridor's limit; candidates parallel to a fixed line inherit that line's always-on limit via the shared angle difference. A greenfield discrete corridor emits no zero-capacity residual row at all, preventing an unbuilt corridor from pinning the bus-angle difference of the two zones it would connect.
+- Two flow–angle coupling formulations for discrete builds, selected with the `Bilinear_DC_OPF` flag: a big-M relaxation (`Bilinear_DC_OPF: 0`, default) that keeps the model a MILP, and an exact bilinear formulation (`Bilinear_DC_OPF: 1`) that requires a solver supporting bilinear terms (e.g. Gurobi). Per-line big-M values are read from an optional `BigM` column of `Network.csv`.
+- Symmetry-breaking constraints on groups of identical parallel discrete candidate lines (`DISCRETE_BUILD_LINE_GROUPS`), imposing a build order to reduce branch-and-bound degeneracy.
+- `DiscreteInvestments` additionally enables integer capacity builds for *resources* via a `Discrete_Build` column in the resource CSVs (e.g. `Thermal.csv`), setting the corresponding `vCAP` (and retirement) variables to integer.
+- Benders support for DC-OPF expansion, driven by new `benders_settings.yml` flags: `RunTransportModel` (warm-start the cuts with a transport-model relaxation before enforcing DC-OPF), `LPTransportHotstart` and `LPDCOPFHotstart` (LP-relax the planning problem's integer/binary variables for the transport and DC-OPF passes, then restore integrality), and `RegularizationPostHotstart` (keep level-set regularization active after the hot-start passes). When any LP hot-start is enabled, GenX now forces MacroEnergySolvers' own `IntegerInvestment` routine off to avoid a redundant, conflicting integer relaxation.
+- New example system `example_systems/12_IEEE_9_bus_DC_OPF_expansion/` and test suite `test/test_DCOPF_expansion.jl` covering monolithic and Benders solves of DC-OPF with continuous and discrete transmission expansion.
+- User Guide page `docs/src/User_Guide/dcopf_transmission_expansion.md` documenting the transport vs. DC-OPF models, continuous vs. discrete expansion, the five `Network.csv` corridor scenarios, the Benders hot-start flags, and the recommendation to use discrete builds for greenfield corridors under DC-OPF.
+
+### Changed
+- `write_costs` split into `cost_breakdown`, which attributes each cost term to a resource, and `assemble_costs`, which applies scaling and builds the table. System totals and zone columns are now derived from one attribution rather than accumulated independently, so the zone columns sum to the `Total` column by construction. This is groundwork for multi-stage cost discounting.
+- `capacity_decisions.jl` refactored to support both monolithic and Benders decomposition modes, cleanly separating capacity (master problem) and operational (subproblem) variables.
+- `generate_model.jl` updated to route model construction through Benders subproblem or monolithic paths based on the `Benders` settings flag.
+- Removed support for Julia 1.6-1.8
+- Updated tests to run with a Project.toml so we can specify HiGHS version to avoid test hanging
+
+### Fixed
+- Corrected investment and operational constraints in `allamcyclelox.jl` that caused incorrect capacity accounting for the Allam Cycle with LOX storage resource type.
+- Fixed effective capacity calculation in the capacity reserve margin subproblem for co-located VRE+storage resources with long-duration storage.
+- Fix writing of net revenue to include all sources of revenue, not just energy revenue (#855).
+- Per-zone `cVar` in `costs.csv` now includes charge and discharge variable O&M for symmetric co-located VRE+storage resources. The per-zone block reused the `VS_ASYM_*` sets that the fixed-cost block above it had built, but those contain only resources with a charge/discharge flag of 2, whereas the O&M expressions are declared over the broader `VS_STOR_*` sets. Symmetric storage O&M was therefore counted in the objective and in the `Total` column but omitted from every zone column. System totals are unchanged.
+- Myopic multi-stage runs now reject a resource with a positive investment cost and a `Capital_Recovery_Period` of 0, as perfect-foresight runs already did. Such a resource has no years over which to spread its annuity, so the cost cannot be represented; it previously passed validation only because myopic runs skip the overnight-capital-cost conversion entirely.
+- Cost output rows with no zonal attribution (`cUnmetRsv`, `cNetworkExp`, `cUnmetPolicyPenalty`, and the `cGridConnection` memo) are now written as empty cells rather than `"-"`, in both `costs.csv` and `planning_problem_costs.csv`. A string placeholder forced the whole zone column to be read back as text, so arithmetic on it failed; empty cells read back as missing values while the column stays numeric. Scripts that test for the literal `"-"` need updating.
+- Multi-stage cost outputs are now reported on a consistent basis. Each stage's `costs.csv` is the present value at the start of the modeling horizon, which is what the objective function weighs, and a companion `costs_undiscounted.csv` gives the cash flow over the stage with no time value. `costs_multi_stage.csv` and the new `costs_undiscounted_multi_stage.csv` stack the per-stage columns without further scaling, so summing a row across stages gives the cost over the whole horizon. The `cTotal` row is restored to the summary; it was previously dropped on the incorrect grounds that it contained the cost-to-go term.
+- Myopic multi-stage cost reports now include the investment annuities falling beyond the stage being solved. The myopic objective charges only one year of each annuity, so those payments are added back when reporting, making myopic and perfect-foresight results comparable.
+- Age-based retirement now measures a technology's life from the start of the stage it was built in to the start of the current stage, rather than to the end of the current stage. Capacity reaching end of life part way through a stage stays available for that whole stage and retires at the beginning of the next. This only differs when stages have unequal lengths; runs with equal stage lengths are unchanged.
+- Multi-stage operating costs are now discounted as if incurred at the end of each year, matching how investment annuities are already discounted. `OPEXMULT` changes from `sum 1/(1+DR)^(j-1)` to `sum 1/(1+DR)^j`, so an operating dollar and an annuity dollar in the same year carry the same weight. Previously the two differed by a factor of (1+DR), biasing the model slightly toward capital-intensive builds. Perfect-foresight objective values fall accordingly; investment costs are unaffected, and myopic runs are unchanged since they use OPEXMULT = 1.
+- The general discount rate in `multi_stage_settings.yml` is now called `DiscountRate` rather than `WACC`. The old name collided with the per-resource `WACC` column of `Resource_multistage_data.csv`, which is a different quantity: one is the planner's time value of money, the other a technology's cost of capital. `WACC` is still accepted and translated with a deprecation warning, so existing cases keep working; setting both keys is an error.
+- Multi-stage investment annuities are now discounted at the general discount rate from `multi_stage_settings.yml` rather than at each technology's or line's own `WACC`. A technology-specific cost of capital belongs in the annualized investment cost input; the discount rate on the annuity stream represents the planner's time value of money, so two resources with the same annuity and recovery period are now weighted identically. The `WACC` and `WACC_*` columns of `Resource_multistage_data.csv` and the `WACC` column of `Network.csv` are still read but no longer affect results; previously a missing resource WACC defaulted to zero, leaving those annuities undiscounted, and a missing `Network.csv` column raised an error. Perfect-foresight objective values change for any resource whose WACC differed from the discount rate. A warning is issued, once per run, when any of these columns holds a value that differs from the discount rate.
+- Myopic multi-stage runs with `WriteIntermittentOutputs: 1` now set the current stage before writing each stage's outputs, rather than leaving it at the final stage. Only reachable when `OutputFullTimeSeries` and `TimeDomainReduction` are also on, in which case `full_time_series_reconstruction` read the wrong stage's `Period_map.csv`.
+- `costs.csv` now accounts for every term that reaches the objective function, so `cTotal` equals the sum of its component rows. Capacity-reserve-margin virtual charge and discharge costs join `cVar`; the hourly matching slack, the multi-stage retrofit lifetime slack, and the two long-duration storage slack penalties (`eObjSlack`, `eObjSlackVreStor`) join `cUnmetPolicyPenalty`. Start-up fuel is now summed over all resources, matching `eTotalCFuelStart`.
+- Corrected the resource set used for co-located VRE+storage AC discharge variable O&M in `eTotalCVarStor` (`vre_stor.jl`). The term summed `eCVar_Discharge_AC` over `AC_CHARGE` instead of `AC_DISCHARGE`, so resources with `STOR_AC_DISCHARGE` set but not `STOR_AC_CHARGE` (or vice versa) were charged the wrong AC discharge O&M in the objective function. No example system exercises this path, as all co-located cases set both flags to 0.
+- `costs.csv` now includes the electrolyzer component's fixed cost (`eTotalCFixElec`) in the system-wide `cFix` total. Previously this term was counted in the per-zone columns but omitted from the `Total` column, so the zone columns did not sum to the total for co-located VRE+storage resources with an electrolyzer component.
+
+## [0.4.6] - 2026-01-06
+
+### Fixed
+
+- Got rid of brodcast operator in `src/write_outputs/capacity_reserve_margin/write_virtual_discharge.jl` for preventing error with Julia 1.6 (#885)
+
+## [0.4.5] - 2025-07-07
+
+### Added
+- New resource type: Allam Cycle with Oxygen Storage (#772).
+- Caching of `derating_factor` to improve performance in model generation (#834).
+- Default option, `"EnableJuMPDirectMode"`, to build the model more efficiently.
+Models running with, non-default, solvers Cbc and Clp will fail unless
+`"EnableJuMPDirectMode"` is set to false (#835).
+- Improve `@expressions` performance by pre-processing sets (#815).
+
+### Fixed
+- Fix call to `get_retirement_stage` by casting `lifetime` to integer (#840).
+- Modify `storage_all.jl` to prevent micro-charging/discharging close to capacity (#836).
+
+### Changed
+- Replace `+=` and `-=` with `add_to_expression!` and `add_similar_to_expression!`
+in several modules to improve performance (#826).
+- Separate myopic logic and DDP logic in the GenX multi-stage code into distinct 
+functions (#810).
+
 ## [0.4.4] - 2025-02-04
 
 ### Added

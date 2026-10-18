@@ -9,6 +9,7 @@ function write_net_revenue(path::AbstractString,
         EP::Model,
         dfCap::DataFrame,
         dfESRRev::DataFrame,
+        dfHMRevenue::DataFrame,
         dfResRevenue::DataFrame,
         dfChargingcost::DataFrame,
         dfPower::DataFrame,
@@ -48,6 +49,8 @@ function write_net_revenue(path::AbstractString,
         # Should read in charge asymmetric capacities
     end
 
+    ALLAM_CYCLE_LOX = inputs["ALLAM_CYCLE_LOX"]
+
     # Create a NetRevenue dataframe
     dfNetRevenue = DataFrame(region = regions,
         Resource = inputs["RESOURCE_NAMES"],
@@ -75,6 +78,11 @@ function write_net_revenue(path::AbstractString,
                                                   dfVreStor[1:VRE_STOR_LENGTH, :NewCapWind]
         end
     end
+
+    if !isempty(ALLAM_CYCLE_LOX)
+        dfNetRevenue.Inv_cost_MW[ALLAM_CYCLE_LOX] += Array(value.(EP[:eCFix_Allam_Plant]))
+    end
+    
     if setup["ParameterScale"] == 1
         dfNetRevenue.Inv_cost_MWh *= ModelScalingFactor # converting Million US$ to US$
         dfNetRevenue.Inv_cost_MW *= ModelScalingFactor # converting Million US$ to US$
@@ -121,6 +129,11 @@ function write_net_revenue(path::AbstractString,
                                                           (value.(EP[:vP_AC_DISCHARGE][AC_DISCHARGE,:]).data * inputs["omega"])
         end
     end
+
+    if !isempty(ALLAM_CYCLE_LOX)
+        dfNetRevenue.Var_OM_cost_out[ALLAM_CYCLE_LOX] += Array(value.(EP[:eCVar_Allam]))
+    end
+    
     if setup["ParameterScale"] == 1
         dfNetRevenue.Fixed_OM_cost_MW *= ModelScalingFactor # converting Million US$ to US$
         dfNetRevenue.Fixed_OM_cost_MWh *= ModelScalingFactor # converting Million US$ to US$
@@ -191,7 +204,7 @@ function write_net_revenue(path::AbstractString,
         dfNetRevenue.SubsidyRevenue = dfSubRevenue[1:G, :SubsidyRevenue] # Unit is confirmed to be US$
     end
 
-    # Add energy and subsidy revenue to the dataframe
+    # Add operating reserves revenue to the dataframe
     dfNetRevenue.OperatingReserveRevenue = zeros(nrow(dfNetRevenue))
     dfNetRevenue.OperatingRegulationRevenue = zeros(nrow(dfNetRevenue))
     if setup["OperationalReserves"] > 0 && has_duals(EP)
@@ -209,6 +222,12 @@ function write_net_revenue(path::AbstractString,
     dfNetRevenue.ESRRevenue = zeros(nrow(dfNetRevenue))
     if setup["EnergyShareRequirement"] > 0 && has_duals(EP) # The unit is confirmed to be $
         dfNetRevenue.ESRRevenue = dfESRRev[1:G, :Total]
+    end
+
+    # Add hourly matching revenue to the dataframe
+    dfNetRevenue.HMRevenue = zeros(nrow(dfNetRevenue))
+    if setup["HourlyMatchingRequirement"] > 0 && has_duals(EP) # The unit is confirmed to be $
+        dfNetRevenue.HMRevenue = dfHMRevenue[1:G, :AnnualSum]
     end
 
     # Calculate emissions cost
@@ -247,13 +266,14 @@ function write_net_revenue(path::AbstractString,
         dfNetRevenue.RegSubsidyRevenue = dfRegSubRevenue[1:G, :SubsidyRevenue]
     end
 
-    dfNetRevenue.Revenue = dfNetRevenue.EnergyRevenue
-    .+dfNetRevenue.SubsidyRevenue
-    .+dfNetRevenue.ReserveMarginRevenue
-    .+dfNetRevenue.ESRRevenue
-    .+dfNetRevenue.RegSubsidyRevenue
-    .+dfNetRevenue.OperatingReserveRevenue
-    .+dfNetRevenue.OperatingRegulationRevenue
+    dfNetRevenue.Revenue = (dfNetRevenue.EnergyRevenue .+
+                            dfNetRevenue.SubsidyRevenue .+
+                            dfNetRevenue.ReserveMarginRevenue .+
+                            dfNetRevenue.ESRRevenue .+
+                            dfNetRevenue.HMRevenue .+
+                            dfNetRevenue.RegSubsidyRevenue .+
+                            dfNetRevenue.OperatingReserveRevenue .+
+                            dfNetRevenue.OperatingRegulationRevenue)
 
     dfNetRevenue.Cost = (dfNetRevenue.Inv_cost_MW .+
                          dfNetRevenue.Inv_cost_MWh .+

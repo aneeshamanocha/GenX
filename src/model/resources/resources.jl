@@ -12,6 +12,7 @@ Possible values:
 - :FlexDemand
 - :VreStorage
 - :Electrolyzer
+- :AllamCycleLox
 """
 const resource_types = (:Thermal,
     :Vre,
@@ -20,7 +21,8 @@ const resource_types = (:Thermal,
     :MustRun,
     :FlexDemand,
     :VreStorage,
-    :Electrolyzer)
+    :Electrolyzer,
+    :AllamCycleLOX)
 
 # Create composite types (structs) for each resource type in resource_types
 for r in resource_types
@@ -525,6 +527,61 @@ Default value for resource attributes.
 """
 const default_zero = 0
 
+# Generic function to get attribute from a resource
+"""
+    get_attr(r::AbstractResource, attr::Symbol, default_value::Real)
+
+Function to get attribute `attr` from a GenX resource `r`. If the attribute is not found, return `default_value`.
+
+# Arguments
+- `r::AbstractResource`: The resource.
+- `attr::Symbol`: The attribute to get.
+- `default_value::Real`: The default value to return if the attribute is not found.
+
+# Returns
+- `value::Real`: The value of the attribute.
+"""
+function get_attr(r::AbstractResource, attr::Symbol, default_value::Real)
+    return get(r, attr, default_value)
+end
+
+"""
+    get_attr(rs::Vector{<:AbstractResource}, attr::Symbol, default_value::Real)
+
+Function to get attribute `attr` from a vector of GenX resources `rs`.
+
+# Arguments
+- `rs::Vector{<:AbstractResource}`: The vector of resources.
+- `attr::Symbol`: The attribute to get.
+- `default_value::Real`: The default value to return if the attribute is not found in any of the resources.
+
+# Returns
+- `values::Vector{Real}`: The vector of values of the attribute.
+"""
+function get_attr(rs::Vector{<:AbstractResource}, attr::Symbol, default_value::Real)
+    return [get_attr(r, attr, default_value) for r in rs]
+end
+
+"""
+    get_attr_by_index(rs::Vector{<:AbstractResource}, index::Int64, attr::Symbol, default_value::Real)
+
+Function to get attribute `attr` from a GenX resource `r` with index `rid`.
+**Warning**: Always double check the index being passed in is correct. The index in the vector `rs` might be different from the resource ID.
+See also `by_rid_res` for getting the attribute by resource ID.
+
+# Arguments
+- `rs::Vector{<:AbstractResource}`: The vector of resources.
+- `index::Int64`: The index of the resource.
+- `attr::Symbol`: The attribute to get.
+- `default_value::Real`: The default value to return if the attribute is not found in the resource.
+
+# Returns
+- `value::Real`: The value of the attribute.
+"""
+function get_attr_by_index(rs::Vector{<:AbstractResource}, index::Int64, attr::Symbol, default_value::Real)
+    return get_attr(rs[index], attr, default_value)
+end
+
 # INTERFACE FOR ALL RESOURCES
 resource_name(r::AbstractResource) = r.resource
 resource_name(rs::Vector{T}) where {T <: AbstractResource} = resource_name.(rs)
@@ -562,6 +619,8 @@ function can_contribute_min_retirement(r::AbstractResource)
     return Bool(get(r, :contribute_min_retirement, true))
 end
 
+discrete_build(r::AbstractResource) = get(r, :discrete_build, default_zero)
+
 const default_minmax_cap = -1.0
 max_cap_mw(r::AbstractResource) = get(r, :max_cap_mw, default_minmax_cap)
 min_cap_mw(r::AbstractResource) = get(r, :min_cap_mw, default_minmax_cap)
@@ -572,7 +631,7 @@ min_cap_mwh(r::AbstractResource) = get(r, :min_cap_mwh, default_minmax_cap)
 max_charge_cap_mw(r::AbstractResource) = get(r, :max_charge_cap_mw, default_minmax_cap)
 min_charge_cap_mw(r::AbstractResource) = get(r, :min_charge_cap_mw, default_minmax_cap)
 
-existing_cap_mw(r::AbstractResource) = r.existing_cap_mw
+existing_cap_mw(r::AbstractResource) = get(r, :existing_cap_mw, default_zero)
 existing_cap_mwh(r::AbstractResource) = get(r, :existing_cap_mwh, default_zero)
 existing_charge_cap_mw(r::AbstractResource) = get(r, :existing_charge_cap_mw, default_zero)
 
@@ -583,10 +642,6 @@ num_vre_bins(r::Vre) = get(r, :num_vre_bins, 1)
 
 function hydro_energy_to_power_ratio(r::AbstractResource)
     get(r, :hydro_energy_to_power_ratio, default_zero)
-end
-
-function qualified_hydrogen_supply(r::AbstractResource)
-    get(r, :qualified_hydrogen_supply, default_zero)
 end
 
 retrofit_id(r::AbstractResource)::String = get(r, :retrofit_id, "None")
@@ -666,8 +721,8 @@ ramp_up_fraction(r::VarPower) = get(r, :ramp_up_percentage, default_percent)
 ramp_down_fraction(r::VarPower) = get(r, :ramp_dn_percentage, default_percent)
 
 # Retirement - Multistage
-lifetime(r::Storage) = get(r, :lifetime, 15)
-lifetime(r::AbstractResource) = get(r, :lifetime, 30)
+lifetime(r::Storage)::Int64 = get(r, :lifetime, 15)
+lifetime(r::AbstractResource)::Int64 = get(r, :lifetime, 30)
 capital_recovery_period(r::Storage) = get(r, :capital_recovery_period, 15)
 capital_recovery_period(r::AbstractResource) = get(r, :capital_recovery_period, 30)
 tech_wacc(r::AbstractResource) = get(r, :wacc, default_zero)
@@ -687,13 +742,11 @@ mga(r::AbstractResource) = get(r, :mga, default_zero)
 
 # policies
 esr(r::AbstractResource; tag::Int64) = get(r, Symbol("esr_$tag"), default_zero)
+hm(r::AbstractResource; tag::Int64) = get(r, Symbol("hm_$tag"), default_zero)
 min_cap(r::AbstractResource; tag::Int64) = get(r, Symbol("min_cap_$tag"), default_zero)
 max_cap(r::AbstractResource; tag::Int64) = get(r, Symbol("max_cap_$tag"), default_zero)
 function derating_factor(r::AbstractResource; tag::Int64)
     get(r, Symbol("derating_factor_$tag"), default_zero)
-end
-function qualified_supply(r::AbstractResource; tag::Int64)
-    get(r, Symbol("qualified_supply_$tag"), default_zero)
 end
 
 # write_outputs
@@ -1061,6 +1114,24 @@ for attr in (:min_retired_cap_inverter_mw,
     cum_attr = Symbol("cum_" * String(attr))
     @eval @interface $cum_attr default_zero
 end
+
+# Allam Cycle with LOX 
+"""
+    allam_cycle_lox(rs::Vector{T}) where T <: AbstractResource
+
+Returns the indices of all ALLAM_CYCLE_LOX resources in the vector `rs`.
+"""
+allam_cycle_lox(rs::Vector{T}) where {T <: AbstractResource} = findall(r -> isa(r, AllamCycleLOX), rs)
+
+with_lox(r::AbstractResource) = get(r, :with_lox, default_zero)
+
+function is_with_lox(rs::Vector{T}) where {T <: AbstractResource}
+    return findall(r -> with_lox(r) == 1, rs)
+end
+
+# duration for lox
+lox_duration(r::AbstractResource) = get(r, :lox_duration, default_zero)
+
 
 ## policies
 # co-located storage

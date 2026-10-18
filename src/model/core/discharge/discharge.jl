@@ -45,16 +45,15 @@ function discharge!(EP::Model, inputs::Dict, setup::Dict)
             +sum(inputs["omega"][t] * esr(gen[y], tag = ESR) * EP[:vP][y, t]
             for y in ids_with_policy(gen, esr, tag = ESR), t in 1:T)
             -sum(inputs["dfESR"][z, ESR] * inputs["omega"][t] * inputs["pD"][t, z]
-            for t in 1:T, z in findall(x -> x > 0, inputs["dfESR"][:, ESR])))
+            for z in findall(x -> x > 0, inputs["dfESR"][:, ESR]), t in 1:T))
         add_similar_to_expression!(EP[:eESR], eESRDischarge)
     end
 
     # Hourly Matching Policy
-    if setup["HourlyMatching"] == 1
-        QUALIFIED_SUPPLY = inputs["QUALIFIED_SUPPLY"]   # Resources that are qualified to contribute to hourly matching constraint
-        @expression(EP, eHMDischarge[t = 1:T, z = 1:Z],
-            sum(EP[:vP][y, t]
-            for y in intersect(resources_in_zone_by_rid(gen, z), QUALIFIED_SUPPLY)))
+    if setup["HourlyMatchingRequirement"] == 1
+        @expression(EP, eHMDischarge[t = 1:T, HM = 1:inputs["nHM"]],
+            sum(hm(gen[y], tag = HM) * EP[:vP][y, t]
+            for y in ids_with_policy(gen, hm, tag = HM)))
         add_similar_to_expression!(EP[:eHM], eHMDischarge)
     end
 end

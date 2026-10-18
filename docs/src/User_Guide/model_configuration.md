@@ -27,19 +27,16 @@ The following tables summarize the model settings parameters and their default/p
 ||1 = constraints account for energy lost. |
 |TimeDomainReduction | 1 = Use time domain reduced inputs available in the folder with the name defined by settings parameter `TimeDomainReductionFolder`. If such a folder does not exist or it is empty, time domain reduction will reduce the input data and save the results there.|
 ||0 = Use the data in the main case folder; do not perform clustering.|
-|VirtualChargeDischargeCost | Hypothetical cost of charging and discharging storage resources (in $/MWh).|
+|VirtualChargeDischargeCost | Hypothetical cost of charging and discharging storage resources (in USD/MWh).|
 |StorageVirtualDischarge | Flag to enable contributions that a storage device makes to the capacity reserve margin without generating power.|
 ||1 = activate the virtual discharge of storage resources.|
 ||0 = do not activate the virtual discharge of storage resources.|
 |LDSAdditionalConstraints | Flag to activate additional constraints for long duration storage resources to prevent violation of SoC limits in non-representative periods.|
 ||1 = activate additional constraints.|
 ||0 = do not activate additional constraints.|
-|HourlyMatching| Constraint to match generation from clean sources with hourly consumption.|
-||1 = Constraint is active.|
-||0 = Constraint is not active.|
-|HydrogenHourlyMatching | Flag to allow hydrogen production to contribute to the hourly clean supply matching constraint.|
-||1 = Hydrogen production contributes to the hourly clean supply matching constraint.|
-||0 = Hydrogen production does not contribute to the hourly clean supply matching constraint.|
+|LDES_Feasible | Flag controlling whether penalized slack variables are added to the long-duration energy storage (LDES) inter-period constraints to guarantee subproblem feasibility. Applies to both the traditional LDES module and the co-located VRE-storage module, and is relevant when representative periods are used (`REP_PERIOD > 1`) and/or under Benders decomposition. See the [Benders Decomposition](@ref) section for details.|
+||0 = (default) add slack variables to the LDES constraints, guaranteeing feasibility.|
+||1 = do **not** add any slack variables to the LDES constraints in either the traditional LDES module or the VRE-storage module.|
 
 ## 2. Solution strategy
 
@@ -49,6 +46,9 @@ The following tables summarize the model settings parameters and their default/p
 ||1 = Scaling is activated. |
 ||0 = Scaling is not activated. |
 |ObjScale| Parameter value to scale the objective function during optimization.|
+|Benders| Flag on whether to use [Benders Decomposition](https://en.wikipedia.org/wiki/Benders_decomposition) or not. When enabled, the algorithm is configured through a separate `benders_settings.yml` file (documented in the [Benders Decomposition](@ref) section), not in `genx_settings.yml`. |
+|| 0 = Monolithic formulation for solving model|
+|| 1 = Benders Decomposition applied to solve the model |
 |MultiStage | Model multiple planning stages |
 ||1 = Model multiple planning stages as specified in `multi_stage_settings.yml` |
 ||0 = Model single planning stage |
@@ -87,6 +87,9 @@ The following tables summarize the model settings parameters and their default/p
 |HydrogenMinimumProduction | Hydrogen production requirements from electrolyzers.|
 |1 = Constraint is active.|
 ||0 = Constraint is not active.| 
+|HourlyMatchingRequirement| Constraint to match generation from clean sources with hourly consumption.|
+||1 = Constraint is active.|
+||0 = Constraint is not active.|
 
 ## 4. Network related
 
@@ -97,7 +100,13 @@ The following tables summarize the model settings parameters and their default/p
 ||0 = modeling single zone or for multi-zone problems in which inter regional transmission expansion is not allowed.|
 | DC\_OPF | Flag for using the DC-OPF formulation for calculating transmission line MW flows and imposing constraints.|
 ||1 = use DC-OPF formulation|
-||0 = do not use DC-OPF formulation|
+||0 = do not use DC-OPF formulation (transport / "pipe-flow" model)|
+|DiscreteInvestments | Flag for discrete (binary/integer) investment decisions. Enables fixed-size new transmission lines on corridors flagged with `Discrete_Build = 1` in `Network.csv`, and integer capacity builds for resources with a `Discrete_Build` column. Makes the model a MILP. See [DC-OPF and Transmission Expansion](@ref).|
+||1 = active|
+||0 = all investments are continuous|
+|Bilinear\_DC\_OPF | Formulation used for the flow–angle coupling on discrete candidate lines. Only relevant when `DC_OPF = 1` and `DiscreteInvestments = 1`.|
+||0 = big-M relaxation; keeps the model mixed-integer **linear** (default)|
+||1 = exact bilinear coupling; tighter and needs no big-M, but makes the model mixed-integer **nonlinear** and requires a solver supporting bilinear terms (e.g. Gurobi)|
 |Trans\_Loss\_Segments | Number of segments to use in piece-wise linear approximation of losses.|
 ||1: linear|
 ||>=2: piece-wise quadratic|
@@ -129,6 +138,9 @@ The following tables summarize the model settings parameters and their default/p
 |**Parameter** | **Description**|
 | :------------ | :-----------|
 |Solver | OPTIONAL name of solver. Default is "HiGHS" effectively. It is necessary to set `Solver: "Gurobi"` when [reusing the same gurobi environment for multiple solves](https://github.com/jump-dev/Gurobi.jl?tab=readme-ov-file#reusing-the-same-gurobi-environment-for-multiple-solves).
+|EnableJuMPDirectModel | Flag to enable/disable JuMP `direct_model` to improve the performance. Solvers "HiGHS", "Gurobi", "CPLEX" and "SCIP" support direct model, but "Clp" and "Cbc" do not support it.|
+||1 = enable JuMP `direct_model`.|
+||0 = disable JuMP `direct_model`, use `Model` instead.|
 |EnableJuMPStringNames | Flag to enable/disable JuMP string names to improve the performance.|
 ||1 = enable JuMP string names.|
 ||0 = disable JuMP string names.|

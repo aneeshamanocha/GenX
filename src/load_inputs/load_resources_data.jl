@@ -15,7 +15,8 @@ function _get_resource_info()
         flex_demand = (filename = "Flex_demand.csv", type = FlexDemand),
         must_run = (filename = "Must_run.csv", type = MustRun),
         electrolyzer = (filename = "Electrolyzer.csv", type = Electrolyzer),
-        vre_stor = (filename = "Vre_stor.csv", type = VreStorage))
+        vre_stor = (filename = "Vre_stor.csv", type = VreStorage),
+        allam_cycle_lox = (filename = "Allam_Cycle_LOX.csv", type = AllamCycleLOX))  
     return resource_info
 end
 
@@ -35,17 +36,15 @@ function _get_policyfile_info()
     min_cap_filenames = ["Resource_minimum_capacity_requirement.csv"]
     max_cap_filenames = ["Resource_maximum_capacity_requirement.csv"]
     h2_demand_filenames = ["Resource_hydrogen_demand.csv"]
-    hourly_matching_filenames = ["Resource_hourly_matching.csv"]
+    hourly_matching_filenames = ["Resource_hourly_matching_requirement.csv"]
 
     policyfile_info = (
         esr = (filenames = esr_filenames, setup_param = "EnergyShareRequirement"),
         cap_res = (filenames = cap_res_filenames, setup_param = "CapacityReserveMargin"),
         min_cap = (filenames = min_cap_filenames, setup_param = "MinCapReq"),
         max_cap = (filenames = max_cap_filenames, setup_param = "MaxCapReq"),
-        h2_demand = (
-            filenames = h2_demand_filenames, setup_param = "HydrogenMinimumProduction"),
-        hourly_matching = (
-            filenames = hourly_matching_filenames, setup_param = "HourlyMatching")
+        hm = (filenames = hourly_matching_filenames, setup_param = "HourlyMatchingRequirement"),
+        h2_demand = (filenames = h2_demand_filenames, setup_param = "HydrogenMinimumProduction")
     )
     return policyfile_info
 end
@@ -63,7 +62,8 @@ function _get_summary_map()
         :Thermal => "Thermal",
         :Vre => "VRE",
         :MustRun => "Must_run",
-        :VreStorage => "VRE_and_storage")
+        :VreStorage => "VRE_and_storage",
+        :AllamCycleLOX => "Allam_Cycle_LOX")
     max_length = maximum(length.(values(names_map)))
     for (k, v) in names_map
         names_map[k] = v * repeat(" ", max_length - length(v))
@@ -185,6 +185,57 @@ function scale_vre_stor_data!(vre_stor_in::DataFrame, scale_factor::Float64)
 end
 
 """
+    scale_allamcycle_data!(allamcycle_in::DataFrame, scale_factor::Float64)
+
+Scales allamcycle attributes in-place if necessary. Generally, these scalings converts energy and power units from MW to GW  and \$/MW to \$M/GW. Both are done by dividing the values by 1000.
+See documentation for descriptions of each column being scaled.
+
+# Arguments
+- `allamcycle_in` (DataFrame): A dataframe containing data for flexible ccs (e.g, AllamCycle or 
+storage coupled NGCC-CCS)
+- `scale_factor` (Float64): A scaling factor for energy and currency units.
+
+"""
+function scale_allamcycle_data!(allamcycle_in::DataFrame, scale_factor::Float64)
+    columns_to_scale = [
+        :existing_cap_sco2turbine,  # to GW or kt 
+        :existing_cap_asu,          # to GW or kt 
+        :existing_cap_lox,          # to GW or kt
+
+        :cap_size_sco2turbine,      # to GW or kt 
+        :cap_size_asu, 
+        :cap_size_lox, 
+
+        :min_cap_sco2turbine,       # to GW or kt 
+        :max_cap_sco2turbine,       # to GW
+        :min_cap_asu,               # to GW or kt 
+        :max_cap_asu,               # to GW
+        :min_cap_lox,               # to GW or kt 
+        :max_cap_lox,               # to GW
+
+        :inv_cost_sco2turbine_per_mwyr,         # to $M/GW/yr
+        :fixed_om_cost_sco2turbine_per_mwyr,    # to $M/GW/yr
+
+        :inv_cost_asu_per_mwyr,         # to $M/GW/yr
+        :fixed_om_cost_asu_per_mwyr,    # to $M/GW/yr
+
+        :inv_cost_lox_per_tyr,          # to $M/GW/yr
+        :fixed_om_cost_lox_per_tyr,     # to $M/GW/yr
+
+        :var_om_cost_sco2turbine_per_mwh,   # to $M/GWh
+        :var_om_cost_asu_per_mwh,           # to $M/GWh
+        :var_om_cost_lox_per_t,             # to $M/GWh
+
+        :start_cost_sco2turbine_per_mw,   # to $M/GW
+        :start_cost_asu_per_mw,           # to $M/GW
+        :start_cost_lox_per_t             # to $M/GW
+    ]
+
+    scale_columns!(allamcycle_in, columns_to_scale, scale_factor)
+    return nothing
+end
+
+"""
     scale_columns!(df::DataFrame, columns_to_scale::Vector{Symbol}, scale_factor::Float64)
 
 Scales in-place the columns in `columns_to_scale` of a dataframe `df` by a `scale_factor`.
@@ -226,7 +277,8 @@ function load_resource_df(path::AbstractString, scale_factor::Float64, resource_
     rename!(resource_in, lowercase.(names(resource_in)))
     scale_resources_data!(resource_in, scale_factor)
     # scale vre_stor columns if necessary
-    resource_type == VreStorage && scale_vre_stor_data!(resource_in, scale_factor)
+    resource_type == VreStorage && scale_vre_stor_data!(resource_in, scale_factor) 
+    resource_type == AllamCycleLOX && scale_allamcycle_data!(resource_in, scale_factor)
     return resource_in
 end
 
@@ -472,35 +524,24 @@ function check_retrofit_resource(r::AbstractResource)
     return ErrorMsg.(error_strings)
 end
 
-function check_hydrogen_resources(r::AbstractResource)
-    error_strings = String[]
 
-    # check that qualified_hydrogen_supply is set only for non-electrolyzer resources
-    if isa(r, Electrolyzer) == true && qualified_hydrogen_supply(r) == true
-        e = string("Resource ", resource_name(r),
-            " is an Electrolyzer but has :qualified_hydrogen_supply = ",
-            qualified_hydrogen_supply(r), ".\n",
-            "This setting is valid only for resources that are not Electrolyzers.", "\n",
-            "Please check the documentation for the correct setting.")
+function check_allam_cycle_lox_multistage(setup::Dict, r::AbstractResource)
+    error_strings = String[]
+    if setup["MultiStage"] == 1 && isa(r, AllamCycleLOX)
+        e = string("Allam Cycle LOX resources are not supported in multistage mode.")
         push!(error_strings, e)
     end
     return ErrorMsg.(error_strings)
 end
 
-function check_qualified_hydrogen_supply(r::AbstractResource)
-    warning_strings = String[]
-
-    if qualified_hydrogen_supply(r) == 1
-        e = string("Resource ",
-            resource_name(r),
-            " has :qualified_hydrogen_supply = 1. However \n" *
-            "the :qualified_hydrogen_supply attribute is deprecated and will be removed in a future version. \n" *
-            "Please use the :qualified_supply column in the `Resource_hourly_matching.csv` file instead, and remove \n" *
-            "the :qualified_hydrogen_supply attribute from the resource file. \n" *
-            "Please see the documentation for more information.")
-        push!(warning_strings, e)
+function check_allam_cycle_lox_retrofit(r::AbstractResource)
+    error_strings = String[]
+    if (can_retrofit(r) == true || is_retrofit_option(r) == true) && isa(r, AllamCycleLOX)
+        e = string("Resource ", resource_name(r), " is an Allam Cycle LOX resource but has :can_retrofit = ", can_retrofit(r), " and :retrofit = ", is_retrofit_option(r), ".")
+        e *= "\nHowever, Allam Cycle LOX resources are not eligible for retrofitting, so they should have both :can_retrofit = 0 and :retrofit = 0."
+        push!(error_strings, e)
     end
-    return WarnMsg.(warning_strings)
+    return ErrorMsg.(error_strings)
 end
 
 function check_resource(setup::Dict, r::AbstractResource)
@@ -510,8 +551,8 @@ function check_resource(setup::Dict, r::AbstractResource)
     e = [e; check_fusion_applicability(setup, r)]
     e = [e; check_mustrun_reserve_contribution(r)]
     e = [e; check_retrofit_resource(r)]
-    e = [e; check_qualified_hydrogen_supply(r)]
-    e = [e; check_hydrogen_resources(r)]
+    e = [e; check_allam_cycle_lox_multistage(setup, r)]
+    e = [e; check_allam_cycle_lox_retrofit(r)]
     return e
 end
 
@@ -658,7 +699,7 @@ function validate_policy_dataframe!(filename::AbstractString, policy_in::DataFra
     filter!(col -> col ≠ "resource", cols)
 
     accepted_cols = ["derating_factor", "esr", "esr_vrestor",
-        "h2_demand", "qualified_supply",
+        "h2_demand", "hm",
         [string(cap, type) for cap in ["min_cap", "max_cap"]
          for type in ("", "_stor", "_solar", "_wind")]...]
 
@@ -1218,27 +1259,6 @@ function add_resources_to_input_data!(inputs::Dict,
     inputs["NEW_CAP_CHARGE"] = new_cap_charge
     inputs["RET_CAP_CHARGE"] = ret_cap_charge
 
-    ### Hourly matching - qualified supply
-    inputs["QUALIFIED_SUPPLY"] = ids_with_policy(gen, qualified_supply, tag = 1)
-    ## this validations are for backward compatibility with previous version of the hourly matching constraint
-    # if HydrogenHourlyMatching is enabled, but HourlyMatching is not, enable HourlyMatching 
-    if setup["HydrogenHourlyMatching"] == 1 && setup["HourlyMatching"] == 0
-        Base.depwarn(
-            """HydrogenHourlyMatching is enabled, but HourlyMatching is not.
-            Switching HourlyMatching to 1 to enable backward compatibility with previous versions of constraint.""",
-            :add_resources_to_input_data!, force = true)
-        setup["HourlyMatching"] = 1
-    end
-    # if qualified_supply is empty but qualified_hydrogen_supply is not, use qualified_hydrogen_supply
-    if isempty(inputs["QUALIFIED_SUPPLY"]) &&
-       !isempty(ids_with(gen, qualified_hydrogen_supply))
-        Base.depwarn("""The column name :qualified_hydrogen_supply is deprecated. 
-        Please use the `Resource_hourly_matching.csv` instead. The resource attribute 
-        :qualified_hydrogen_supply will be removed in the future release.""",
-            :add_resources_to_input_data!, force = true)
-        inputs["QUALIFIED_SUPPLY"] = ids_with(gen, qualified_hydrogen_supply)
-    end
-
     ## Co-located resources
     # VRE and storage
     inputs["VRE_STOR"] = vre_stor(gen)
@@ -1356,6 +1376,40 @@ function add_resources_to_input_data!(inputs::Dict,
         inputs["ZONES_AC_DISCHARGE"] = zone_id(gen[storage_ac_discharge(gen)])
         inputs["ZONES_DC_CHARGE"] = zone_id(gen[storage_dc_charge(gen)])
         inputs["ZONES_AC_CHARGE"] = zone_id(gen[storage_ac_charge(gen)])
+    end
+
+    ## flexible operation of CCS
+    # Allam Cycle with liquid oxygen (LOX) storage
+    inputs["ALLAM_CYCLE_LOX"] = allam_cycle_lox(gen)
+    inputs["WITH_LOX"] = is_with_lox(gen)
+
+    # reconstruct a dictionary to store component-wise data for Allam Cycle w/ LOX.
+    # the order must follow sCO2 turbine -> ASU -> LOX
+    allam_dict = Dict()
+    for y in inputs["ALLAM_CYCLE_LOX"]
+        # cost related to allam cycle lox
+        allam_dict[y, "inv_cost"] = get_attr(gen[y], :inv_cost_sco2turbine_per_mwyr, default_zero), get_attr(gen[y], :inv_cost_asu_per_mwyr, default_zero), get_attr(gen[y], :inv_cost_lox_per_tyr, default_zero)
+        allam_dict[y, "fom_cost"] = get_attr(gen[y], :fixed_om_cost_sco2turbine_per_mwyr, default_zero), get_attr(gen[y], :fixed_om_cost_asu_per_mwyr, default_zero), get_attr(gen[y], :fixed_om_cost_lox_per_tyr, default_zero)
+        allam_dict[y, "vom_cost"] = get_attr(gen[y], :var_om_cost_sco2turbine_per_mwh, default_zero), get_attr(gen[y], :var_om_cost_asu_per_mwh, default_zero), get_attr(gen[y], :var_om_cost_lox_per_t, default_zero)
+        allam_dict[y, "start_cost"] = get_attr(gen[y], :start_cost_sco2turbine_per_mw, default_zero), get_attr(gen[y], :start_cost_asu_per_mw, default_zero), 0
+        # cap size of each component
+        allam_dict[y, "cap_size"] = get_attr(gen[y], :cap_size_sco2turbine, default_percent), get_attr(gen[y], :cap_size_asu, default_percent), get_attr(gen[y], :cap_size_lox, default_percent)
+        allam_dict[y, "existing_cap"] = get_attr(gen[y], :existing_cap_sco2turbine, default_zero), get_attr(gen[y], :existing_cap_asu, default_zero), get_attr(gen[y], :existing_cap_lox, default_zero)
+        # unit commitment for allam cycle, only sco2 turbine and asu are subjected to unit commitment
+        allam_dict[y, "ramp_up"] = get_attr(gen[y], :ramp_up_percentage_sco2turbine, default_percent), get_attr(gen[y], :ramp_up_percentage_asu, default_percent), 0
+        allam_dict[y, "ramp_dn"] = get_attr(gen[y], :ramp_dn_percentage_sco2turbine, default_percent), get_attr(gen[y], :ramp_dn_percentage_asu, default_percent), 0
+        allam_dict[y, "up_time"] = get_attr(gen[y], :up_time_sco2turbine, default_zero), get_attr(gen[y], :up_time_asu, default_zero), 0
+        allam_dict[y, "min_power"] = get_attr(gen[y], :min_power_sco2turbine, default_zero), get_attr(gen[y], :min_power_asu, default_zero), 0
+        allam_dict[y, "down_time"] = get_attr(gen[y], :down_time_sco2turbine, default_zero), get_attr(gen[y], :down_time_asu, default_zero), 0
+        allam_dict[y, "start_fuel"] = get_attr(gen[y], :start_fuel_sco2turbine_mmbtu_per_mw, default_zero), get_attr(gen[y], :start_fuel_asu_mmbtu_per_mw, default_zero), 0
+    end
+    inputs["allam_dict"] = allam_dict
+
+    # Set of resources eligible for integer capacity builds
+    if setup["DiscreteInvestments"] == 1
+        inputs["NEW_CAP_DISCRETE_BUILD"] = ids_with_positive(gen, discrete_build)
+    else
+        inputs["NEW_CAP_DISCRETE_BUILD"] = Int[]
     end
 
     # Names of resources

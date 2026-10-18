@@ -51,6 +51,7 @@ function investment_energy!(EP::Model, inputs::Dict, setup::Dict)
     STOR_ALL = inputs["STOR_ALL"] # Set of all storage resources
     NEW_CAP_ENERGY = inputs["NEW_CAP_ENERGY"] # Set of all storage resources eligible for new energy capacity
     RET_CAP_ENERGY = inputs["RET_CAP_ENERGY"] # Set of all storage resources eligible for energy capacity retirements
+    eTotalCap = EP[:eTotalCap]
 
     ### Variables ###
 
@@ -74,13 +75,16 @@ function investment_energy!(EP::Model, inputs::Dict, setup::Dict)
         @expression(EP, eExistingCapEnergy[y in STOR_ALL], existing_cap_mwh(gen[y]))
     end
 
+    NEW_AND_RET_CAP_ENERGY = intersect(NEW_CAP_ENERGY, RET_CAP_ENERGY)
+    NEW_NOT_RET_CAP_ENERGY = setdiff(NEW_CAP_ENERGY, RET_CAP_ENERGY)
+    RET_NOT_NEW_CAP_ENERGY = setdiff(RET_CAP_ENERGY, NEW_CAP_ENERGY)
     @expression(EP, eTotalCapEnergy[y in STOR_ALL],
-        if (y in intersect(NEW_CAP_ENERGY, RET_CAP_ENERGY))
-            eExistingCapEnergy[y] + EP[:vCAPENERGY][y] - EP[:vRETCAPENERGY][y]
-        elseif (y in setdiff(NEW_CAP_ENERGY, RET_CAP_ENERGY))
-            eExistingCapEnergy[y] + EP[:vCAPENERGY][y]
-        elseif (y in setdiff(RET_CAP_ENERGY, NEW_CAP_ENERGY))
-            eExistingCapEnergy[y] - EP[:vRETCAPENERGY][y]
+        if (y in NEW_AND_RET_CAP_ENERGY)
+            eExistingCapEnergy[y] + vCAPENERGY[y] - vRETCAPENERGY[y]
+        elseif (y in NEW_NOT_RET_CAP_ENERGY)
+            eExistingCapEnergy[y] + vCAPENERGY[y]
+        elseif (y in RET_NOT_NEW_CAP_ENERGY)
+            eExistingCapEnergy[y] - vRETCAPENERGY[y]
         else
             eExistingCapEnergy[y]
         end)
@@ -115,7 +119,7 @@ function investment_energy!(EP::Model, inputs::Dict, setup::Dict)
     if MultiStage == 1
         @constraint(EP,
             cExistingCapEnergy[y in STOR_ALL],
-            EP[:vEXISTINGCAPENERGY][y]==existing_cap_mwh(gen[y]))
+            vEXISTINGCAPENERGY[y]==existing_cap_mwh(gen[y]))
     end
 
     ## Constraints on retirements and capacity additions
@@ -140,8 +144,8 @@ function investment_energy!(EP::Model, inputs::Dict, setup::Dict)
     # Max and min constraints on energy storage capacity built (as proportion to discharge power capacity)
     @constraint(EP,
         cMinCapEnergyDuration[y in STOR_ALL],
-        EP[:eTotalCapEnergy][y]>=min_duration(gen[y]) * EP[:eTotalCap][y])
+        eTotalCapEnergy[y]>=min_duration(gen[y]) * eTotalCap[y])
     @constraint(EP,
         cMaxCapEnergyDuration[y in STOR_ALL],
-        EP[:eTotalCapEnergy][y]<=max_duration(gen[y]) * EP[:eTotalCap][y])
+        eTotalCapEnergy[y]<=max_duration(gen[y]) * eTotalCap[y])
 end

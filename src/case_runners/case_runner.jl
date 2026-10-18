@@ -35,7 +35,30 @@ function run_genx_case!(case::AbstractString, optimizer::Any = HiGHS.Optimizer)
     mysetup = configure_settings(genx_settings, writeoutput_settings) # mysetup dictionary stores settings and GenX-specific parameters
 
     if mysetup["MultiStage"] == 0
-        run_genx_case_simple!(case, mysetup, optimizer)
+        if mysetup["Benders"] == 0
+            run_genx_case_simple!(case, mysetup, optimizer)
+        else
+            benders_settings_path = get_settings_path(case, "benders_settings.yml")
+            mysetup_benders = configure_benders(benders_settings_path)
+            mysetup = merge(mysetup, mysetup_benders)
+
+            if mysetup["DC_OPF"] != 1 && mysetup[:RunTransportModel]
+                @warn "DC_OPF = $(mysetup["DC_OPF"]) and `RunTransportModel` = true. `RunTransportModel`` is a setting for solving with Benders when DCOPF = 1. Did the user mean to set DC_OPF to 1?"
+            end
+
+            hotstart_requested = mysetup[:LPDCOPFHotstart] ||
+                                 (mysetup[:RunTransportModel] && mysetup[:LPTransportHotstart])
+            if hotstart_requested && mysetup[:IntegerInvestment]
+                # Additional Note: MacroEnergySolvers.jl could support some of the LP relaxations here via the IntegerInvestment flag, 
+                # but the user has more control over the regularization scheme here; in some tests, the best performance we had
+                # ran with LP relaxations with regularization for all hot starting stages, and then turned off regularization for the final DC-OPF stage
+                # Consequently, the IntegerInvestment flag is handled by the GenX specific hotstarting flags
+                @warn "`IntegerInvestment` is incompatible with the LP hot-starts (`LPTransportHotstart` / `LPDCOPFHotstart`), which perform the integer relaxation themselves. Turning off `IntegerInvestment`."
+                mysetup[:IntegerInvestment] = false
+            end
+            
+            run_genx_case_benders!(case, mysetup, optimizer)
+        end
     else
         run_genx_case_multistage!(case, mysetup, optimizer)
     end
@@ -167,9 +190,6 @@ function run_genx_case_multistage!(case::AbstractString, mysetup::Dict, optimize
     validate_can_retire_multistage(
         inputs_dict, mysetup["MultiStageSettingsDict"]["NumStages"])
 
-    ### Solve model
-    println("Solving Model")
-
     # Prepare folder for results    
     outpath = get_default_output_folder(case)
 
@@ -185,9 +205,16 @@ function run_genx_case_multistage!(case::AbstractString, mysetup::Dict, optimize
         mkdir(outpath)
     end
 
-    # Step 3) Run DDP Algorithm
-    ## Solve Model
-    model_dict, mystats_d, inputs_dict = run_ddp(outpath, model_dict, mysetup, inputs_dict)
+    ### Solve model
+    println("Solving Model")
+
+    # Step 3) Run DDP Algorithm or Myopic single pass
+    if mysetup["MultiStageSettingsDict"]["Myopic"] == 1
+        mystats_d = Dict()  # mystats_d is for DDP iteration metadata
+        model_dict, inputs_dict = run_myopic_multistage(outpath, model_dict, mysetup, inputs_dict)
+    else
+        model_dict, mystats_d, inputs_dict = run_ddp(outpath, model_dict, mysetup, inputs_dict)
+    end
 
     # Step 4) Write final outputs from each stage
     if mysetup["MultiStageSettingsDict"]["Myopic"] == 0 ||
@@ -202,4 +229,184 @@ function run_genx_case_multistage!(case::AbstractString, mysetup::Dict, optimize
     # Step 5) Write DDP summary outputs
 
     write_multi_stage_outputs(mystats_d, outpath, mysetup, inputs_dict)
+end
+
+function run_genx_case_benders!(case::AbstractString, mysetup::Dict, optimizer::Any = HiGHS.Optimizer)
+    function append_to_benders_results(results::NamedTuple, new_results::NamedTuple)
+        return (planning_problem = new_results.planning_problem, planning_sol = new_results.planning_sol, subop_sol = new_results.subop_sol, LB_hist = vcat(results.LB_hist, new_results.LB_hist), UB_hist = vcat(results.UB_hist, new_results.UB_hist), gap_hist = vcat(results.gap_hist, new_results.gap_hist), termination_status = new_results.termination_status, cpu_time = vcat(results.cpu_time, new_results.cpu_time), planning_sol_hist = new_results.planning_sol_hist)
+    end
+
+    settings_path = get_settings_path(case)    
+    ### Cluster time series inputs if necessary and if specified by the user
+    if mysetup["TimeDomainReduction"] == 1
+        TDRpath = joinpath(case, mysetup["TimeDomainReductionFolder"])
+        system_path = joinpath(case, mysetup["SystemFolder"])
+        prevent_doubled_timedomainreduction(system_path)
+        if !time_domain_reduced_files_exist(TDRpath)
+            println("Clustering Time Series Data (Grouped)...")
+            cluster_inputs(case, settings_path, mysetup)
+        else
+            println("Time Series Data Already Clustered.")
+        end
+    end
+    mysetup["settings_path"] = settings_path;
+
+    myinputs = load_inputs(mysetup, case);
+
+    myinputs_decomp = separate_inputs_subperiods(myinputs);
+
+    # Worker setup happens here, rather than in run_genx_case!, because sizing the worker pool
+    # requires knowing how many operational subproblems there are.
+    setup_benders_workers!(mysetup, length(myinputs_decomp));
+
+    # The transport model is the DC-OPF model without the flow-angle constraints, so the transport
+    # pass builds the planning problem and the subproblems with DC_OPF switched off. Remember what
+    # was actually requested: DC_OPF is restored once the relaxation has been solved.
+    dcopf_requested = mysetup["DC_OPF"]
+    if mysetup[:RunTransportModel]
+        mysetup["DC_OPF"] = 0
+    end
+
+    benders_inputs = generate_benders_inputs(mysetup, myinputs, myinputs_decomp, optimizer)
+    planning_problem = benders_inputs["planning_problem"]
+    planning_variables_sub = benders_inputs["planning_variables_sub"]
+    subproblems = benders_inputs["subproblems"]
+
+    cpu_solve_time = 0
+    if dcopf_requested == 1
+        results = (planning_problem=nothing, planning_sol = nothing, subop_sol = nothing, LB_hist = Float64[], UB_hist = Float64[], gap_hist = Float64[], termination_status = nothing, cpu_time = Float64[], planning_sol_hist = nothing)
+
+        # The DC-OPF run calls `benders` several times on the same subproblems (LP hot-starts, a
+        # transport relaxation pass, then the full run). When feasibility cuts are enabled
+        # (ExpectFeasibleSubproblems = false), MacroEnergySolvers attaches slack variables to every
+        # subproblem on entry to `benders`, which breaks that reuse twice over: re-entering fails on
+        # the duplicate `slack_max` registration, and only the constraints present when the slacks
+        # were attached carry a slack term, so anything added later (the DC-OPF constraints) could
+        # never be relaxed by a feasibility cut. Both are handled by rebuilding the subproblems
+        # before any `benders` call that would otherwise reuse already-slacked models. The rebuild
+        # reads the current mysetup, so it also picks up DC_OPF once it is switched on below.
+        # The planning problem is never rebuilt, so its accumulated cuts survive as a warm start.
+        slacks_attached = false
+        function run_benders_pass!()
+            if slacks_attached
+                subproblems, planning_variables_sub = init_benders_subproblems(mysetup,
+                    myinputs_decomp,
+                    benders_inputs["planning_variables"],
+                    optimizer)
+                # Keep benders_inputs pointing at the models actually in use: it otherwise holds the
+                # last reference to the superseded subproblems, keeping them (and their solver
+                # instances) alive alongside the new ones.
+                benders_inputs["subproblems"] = subproblems
+                benders_inputs["planning_variables_sub"] = planning_variables_sub
+            end
+            new_results = MacroEnergySolvers.benders(planning_problem,
+                subproblems,
+                planning_variables_sub,
+                mysetup)
+            slacks_attached = !mysetup[:ExpectFeasibleSubproblems]
+            return new_results
+        end
+
+        planning_variables = all_variables(planning_problem)
+        integer_variables = planning_variables[is_integer.(planning_variables)]
+        binary_variables = planning_variables[is_binary.(planning_variables)]
+        if mysetup[:RunTransportModel]
+            println("Running Transport Model Pass")
+            if mysetup[:LPTransportHotstart]
+                println("Relaxing integer/binary variables for transport model pass")
+                # unset integer and binary variables and solve
+                unset_integer.(integer_variables)
+                unset_binary.(binary_variables)
+                set_lower_bound.(binary_variables, 0)
+                set_upper_bound.(binary_variables, 1)
+
+                results = append_to_benders_results(results, run_benders_pass!())
+
+                println("Transport model pass complete with LP hot-start. Resetting integer/binary variables and solving again.")
+                # reset integer and binary variables
+                set_integer.(integer_variables)
+                set_binary.(binary_variables)
+                results = append_to_benders_results(results, run_benders_pass!())
+                cpu_solve_time += results.cpu_time[end]
+            else
+                results = append_to_benders_results(results, run_benders_pass!())
+                cpu_solve_time += results.cpu_time[end]
+            end
+
+            # Switch to DC-OPF. The transport model just solved is a relaxation of DC-OPF, so the
+            # cuts already accumulated in the planning problem remain valid underestimators of the
+            # DC-OPF recourse cost: the planning problem is kept as-is and acts as a warm start.
+            # Only the subproblems have to gain the DC-OPF constraints.
+            mysetup["DC_OPF"] = 1
+            if !slacks_attached
+                # Nothing was slacked, so the constraints can be added to the existing models in
+                # place — on the owning worker when the subproblems live in a DArray. Otherwise the
+                # next run_benders_pass! rebuilds the subproblems, and because DC_OPF is now 1 they
+                # come back with the DC-OPF constraints already in them.
+                add_dcopf_to_subproblems!(subproblems, myinputs_decomp, mysetup)
+            end
+        end
+        if mysetup[:LPDCOPFHotstart]
+            println("Relaxing integer/binary variables for DC-OPF model pass")
+            # unset integer variables and solve
+            unset_integer.(integer_variables)
+            unset_binary.(binary_variables)
+            set_lower_bound.(binary_variables, 0)
+            set_upper_bound.(binary_variables, 1)
+
+            results = append_to_benders_results(results, run_benders_pass!())
+
+            if !(mysetup[:RegularizationPostHotstart])
+                mysetup[:StabParam] = 0.0
+            end
+            
+            println("DC-OPF model pass complete with LP hot-start. Resetting integer/binary variables and solving again.")
+
+            # reset integer and binary variables
+            set_integer.(integer_variables)
+            set_binary.(binary_variables)
+
+            results = append_to_benders_results(results, run_benders_pass!())
+            cpu_solve_time += results.cpu_time[end]
+        elseif !(mysetup[:RegularizationPostHotstart])
+            mysetup[:StabParam] = 0.0
+
+            results = append_to_benders_results(results, run_benders_pass!())
+            cpu_solve_time += results.cpu_time[end]
+        else
+            results = append_to_benders_results(results, run_benders_pass!())
+            cpu_solve_time += results.cpu_time[end]
+        end
+    else
+        results = MacroEnergySolvers.benders(planning_problem, subproblems, planning_variables_sub, mysetup)
+        cpu_solve_time += results.cpu_time[end]
+    end
+
+    myinputs["solve_time"] = cpu_solve_time
+
+    subop_sol = MacroEnergySolvers.solve_subproblems(subproblems, results.planning_sol, true)
+    
+    results = (; results..., subop_sol = subop_sol)
+
+    # Note: the planning problem is intentionally NOT re-solved/realigned here. All first-stage
+    # outputs (capacity, network expansion, planning costs) are read directly from the incumbent
+    # results.planning_sol inside write_benders_output, so they reflect the same solution as the
+    # subproblem dispatch without depending on the planning-problem model's post-Benders state.
+    println("Writing Output")
+
+    outputs_path = joinpath(case, "results_benders")
+
+    if mysetup["OverwriteResults"] == 1
+		# Overwrite existing results if dir exists
+		# This is the default behaviour when there is no flag, to avoid breaking existing code
+		if !(isdir(outputs_path))
+		    mkdir(outputs_path)
+		end
+	else
+		# Find closest unused ouput directory name and create it
+		outputs_path = choose_output_dir(outputs_path)
+		mkdir(outputs_path)
+	end
+    
+    elapsed_time = @elapsed write_benders_output(results, outputs_path, mysetup, myinputs, planning_problem, subproblems);
 end

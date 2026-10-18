@@ -65,20 +65,32 @@ function flexible_demand!(EP::Model, inputs::Dict, setup::Dict)
     ### Expressions ###
 
     ## Power Balance Expressions ##
+    FLEX_BY_ZONE = map(1:Z) do z
+        return intersect(FLEX, resources_in_zone_by_rid(gen, z))
+    end
     @expression(EP, ePowerBalanceDemandFlex[t = 1:T, z = 1:Z],
         sum(-EP[:vP][y, t] + EP[:vCHARGE_FLEX][y, t]
-        for y in intersect(FLEX, resources_in_zone_by_rid(gen, z))))
+        for y in FLEX_BY_ZONE[z]))
     add_similar_to_expression!(EP[:ePowerBalance], ePowerBalanceDemandFlex)
 
     # Capacity Reserves Margin policy
     if setup["CapacityReserveMargin"] > 0
+        nCRMZones = inputs["NCapacityReserveMargin"]
+        capresfactor = inputs["DERATING_FACTOR"]
         @expression(EP,
-            eCapResMarBalanceFlex[res = 1:inputs["NCapacityReserveMargin"], t = 1:T],
-            sum(derating_factor(gen[y], tag = res) *
+            eCapResMarBalanceFlex[res = 1:nCRMZones, t = 1:T],
+            sum(capresfactor[y, res] *
                 (EP[:vCHARGE_FLEX][y, t] - EP[:vP][y, t]) for y in FLEX))
         add_similar_to_expression!(EP[:eCapResMarBalance], eCapResMarBalanceFlex)
     end
 
+    # Hourly matching policy
+    if setup["HourlyMatchingRequirement"] == 1
+        @expression(EP, eHMFlex[t = 1:T, HM = 1:inputs["nHM"]],
+            sum(hm(gen[y], tag = HM) * (EP[:vCHARGE_FLEX][y, t]-2*EP[:vP][y, t])
+            for y in intersect(ids_with_policy(gen, hm, tag = HM), FLEX)))
+        add_similar_to_expression!(EP[:eHM], eHMFlex)
+    end
     ## Objective Function Expressions ##
 
     # Variable costs of "charging" for technologies "y" during hour "t" in zone "z"

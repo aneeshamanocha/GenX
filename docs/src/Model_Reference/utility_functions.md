@@ -2,5 +2,10 @@
 
 ```@autodocs
 Modules = [GenX]
-Pages = ["utility.jl"]
+Pages = ["model/utility.jl"]
+```
+
+```@docs
+GenX.resolve_discount_rate_setting!
+GenX.warn_if_not_converged
 ```
