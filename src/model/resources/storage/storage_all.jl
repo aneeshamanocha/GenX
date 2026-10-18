@@ -128,7 +128,7 @@ function storage_all!(EP::Model, inputs::Dict, setup::Dict)
     @constraints(EP,
         begin
             # Maximum energy stored must be less than energy capacity
-            [y in STOR_ALL, t in 1:T], vS[y, t] <= eTotalCapEnergy[y]
+            cStorageMaxEnergy[y in STOR_ALL, t in 1:T], vS[y, t] <= eTotalCapEnergy[y]
 
             # energy stored for the next hour
             cSoCBalInterior[t in INTERIOR_SUBPERIODS, y in STOR_ALL],
@@ -148,7 +148,7 @@ function storage_all!(EP::Model, inputs::Dict, setup::Dict)
     ## Patrick Bryant's suggestion implementation - Start
     # Maximum charging rate must be less than available storage capacity                                                                                                                                                                                                                           
     @constraint(EP,
-        [y in STOR_ALL, t in 1:T],
+        cStorageChargingHeadroom[y in STOR_ALL, t in 1:T],
         efficiency_up(gen[y]) * vCHARGE[y, t] <= eTotalCapEnergy[y] - vS[y, hoursbefore(hours_per_subperiod, t, 1)])
     ## Patrick Bryant's suggestion implementation - End
 
@@ -263,9 +263,9 @@ function storage_all_operation!(EP::Model, inputs::Dict, setup::Dict)
         vCAPRES_discharge = EP[:vCAPRES_discharge]
         add_similar_to_expression!(expr[STOR_ALL, :], vCAPRES_discharge[STOR_ALL, :])
     end
-    @constraint(EP, [y in STOR_ALL, t in 1:T], expr[y, t]<=eTotalCap[y])
+    @constraint(EP, cStorageDischargePower[y in STOR_ALL, t in 1:T], expr[y, t]<=eTotalCap[y])
     # Maximum discharging rate (and contribution to reserves up) must be less than available stored energy in prior period
     @constraint(EP,
-        [y in STOR_ALL, t in 1:T],
+        cStorageDischargeEnergy[y in STOR_ALL, t in 1:T],
         expr[y, t]<=vS[y, hoursbefore(p, t, 1)] * efficiency_down(gen[y]))
 end

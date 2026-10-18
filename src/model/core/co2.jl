@@ -76,7 +76,8 @@ function co2!(EP::Model, inputs::Dict)
     if isempty(CCS)
         @expression(EP, eEmissionsByPlant[y = 1:G, t = 1:T],
             if y in SINGLE_FUEL
-                ((1 - biomass(gen[y])) * (EP[:vFuel][y, t] + EP[:vStartFuel][y, t]) *
+                ((1 - biomass(gen[y])) *
+                 (EP[:ePlantFuel_generation][y, t] + EP[:ePlantFuel_start][y, t]) *
                  fuel_CO2[fuel(gen[y])])
             else
                 sum(((1 - biomass(gen[y])) *
@@ -90,7 +91,8 @@ function co2!(EP::Model, inputs::Dict)
 
         @expression(EP, eEmissionsByPlant[y = 1:G, t = 1:T],
             if y in SINGLE_FUEL
-                (1 - biomass(gen[y]) - co2_capture_fraction(gen[y])) * EP[:vFuel][y, t] *
+                (1 - biomass(gen[y]) - co2_capture_fraction(gen[y])) *
+                EP[:ePlantFuel_generation][y, t] *
                 fuel_CO2[fuel(gen[y])] +
                 (1 - biomass(gen[y]) - co2_capture_fraction_startup(gen[y])) *
                 EP[:eStartFuel][y, t] * fuel_CO2[fuel(gen[y])]
@@ -106,7 +108,8 @@ function co2!(EP::Model, inputs::Dict)
         # CO2 captured from power plants in "Generators_data.csv"
         @expression(EP, eEmissionsCaptureByPlant[y in CCS, t = 1:T],
             if y in SINGLE_FUEL
-                co2_capture_fraction(gen[y]) * EP[:vFuel][y, t] * fuel_CO2[fuel(gen[y])] +
+                co2_capture_fraction(gen[y]) * EP[:ePlantFuel_generation][y, t] *
+                fuel_CO2[fuel(gen[y])] +
                 co2_capture_fraction_startup(gen[y]) * EP[:eStartFuel][y, t] *
                 fuel_CO2[fuel(gen[y])]
             else

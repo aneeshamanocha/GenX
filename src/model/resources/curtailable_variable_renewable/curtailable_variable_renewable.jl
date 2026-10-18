@@ -11,6 +11,9 @@ For each VRE technology type ``y`` and model zone ``z``, the model allows for in
 \end{aligned}
 ```
 The above constraint is defined as an inequality instead of an equality to allow for VRE power output to be curtailed if desired. This adds the possibility of introducing VRE curtailment as an extra degree of freedom to guarantee that generation exactly meets demand in each time step.
+When every contributing bin has exactly zero hourly availability, output is
+fixed to zero. Without operating reserves, its redundant output-limit row is
+omitted; with reserves, the joint constraints remain to limit reserve provision.
 Note that if ```OperationalReserves=1``` indicating that frequency regulation and operating reserves are modeled, then this function calls ```curtailable_variable_renewable_operational_reserves!()```, which replaces the above constraints with a formulation inclusive of reserve provision.
 """
 function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
@@ -63,6 +66,7 @@ function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
         remove_operational_reserves_for_binned_vre_resources!(EP, inputs)
     else
         # For resource for which we are modeling hourly power output
+        available_output_rows = ConstraintRef[]
         for y in VRE_POWER_OUT
             # Define the set of generator indices corresponding to the different sites (or bins) of a particular VRE technology (E.g. wind or solar) in a particular zone.
             # For example the wind resource in a particular region could be include three types of bins corresponding to different sites with unique interconnection, hourly capacity factor and maximim available capacity limits.
@@ -74,11 +78,19 @@ function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
             # Maximum power generated per hour by renewable generators must be less than
             # sum of product of hourly capacity factor for each bin times its the bin installed capacity
             # Note: inequality constraint allows curtailment of output below maximum level.
-            @constraint(EP,
-                [t = 1:T],
-                EP[:vP][y,t]<=sum(inputs["pP_Max"][yy, t] * EP[:eTotalCap][yy]
-                for yy in VRE_BINS))
+            for t in 1:T
+                # A shared output variable covers every bin. One bin with zero
+                # availability is insufficient when another bin can still produce.
+                zero_output_fixed = all(iszero(inputs["pP_Max"][yy, t]) for yy in VRE_BINS) &&
+                                    fix_zero_vre_output_if_implied!(EP[:vP][y, t])
+                if !zero_output_fixed
+                    push!(available_output_rows, @constraint(EP,
+                        EP[:vP][y,t]<=sum(inputs["pP_Max"][yy, t] * EP[:eTotalCap][yy]
+                        for yy in VRE_BINS)))
+                end
+            end
         end
+        EP[:cVREAvailableOutput] = available_output_rows
     end
 
     # Set power variables for all bins that are not being modeled for hourly output to be zero
@@ -89,6 +101,22 @@ function curtailable_variable_renewable!(EP::Model, inputs::Dict, setup::Dict)
     # We use the transpose here because eGenerationByZone is [1:Z, 1:T] and
     # ePowerBalanceDisp is [1:T, 1:Z].
     add_similar_to_expression!(EP[:eGenerationByZone], ePowerBalanceDisp')
+end
+
+# The zero-availability row supplies an upper bound of zero. Only replace it
+# with a fix when the existing native bounds also imply nonnegative output and
+# admit zero. Preserve conflicting bounds/fixes (and any intentionally negative
+# output range) instead of erasing them with force=true.
+function fix_zero_vre_output_if_implied!(power::VariableRef)
+    can_fix = if is_fixed(power)
+        iszero(fix_value(power))
+    else
+        has_lower_bound(power) && iszero(lower_bound(power)) &&
+        (!has_upper_bound(power) || upper_bound(power) >= 0)
+    end
+    can_fix || return false
+    fix(power, 0.0; force = true)
+    return true
 end
 
 @doc raw"""
@@ -133,6 +161,13 @@ function curtailable_variable_renewable_operational_reserves!(EP::Model, inputs:
     resources_in_bin(y) = UnitRange(y, y + num_vre_bins(gen[y]) - 1)
     hourly_bin_capacity(y, t) = sum(hourly_capacity(yy, t) for yy in resources_in_bin(y))
 
+    for y in VRE_POWER_OUT, t in 1:T
+        if all(iszero(hourly_capacity_factor(yy, t)) for yy in resources_in_bin(y))
+            fix_zero_vre_output_if_implied!(vP[y, t])
+        end
+    end
+    # Keep the reserve constraints below: zero generation must not allow
+    # positive regulation or spinning reserves at zero availability.
     @constraint(EP,
         [y in REG, t in 1:T],
         vREG[y, t]<=reg_max(gen[y]) * hourly_bin_capacity(y, t))

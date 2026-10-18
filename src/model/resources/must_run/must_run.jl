@@ -11,6 +11,8 @@ For must-run resources ($y\in \mathcal{MR}$) output in each time period $t$ must
 \hspace{4 cm}  \forall y \in \mathcal{MR}, z \in \mathcal{Z},t \in \mathcal{T}
 \end{aligned}
 ```
+When the required output is a constant, it is imposed as a fixed variable bound
+instead of a singleton equality. Capacity-dependent output retains the equality.
 """
 function must_run!(EP::Model, inputs::Dict, setup::Dict)
     println("Must-Run Resources Module")
@@ -47,9 +49,41 @@ function must_run!(EP::Model, inputs::Dict, setup::Dict)
 
     ### Constratints ###
 
-    @constraint(EP,
-        [y in MUST_RUN, t = 1:T],
-        EP[:vP][y, t]==inputs["pP_Max"][y, t] * EP[:eTotalCap][y])
+    output_rows = ConstraintRef[]
+    for y in MUST_RUN
+        capacity = EP[:eTotalCap][y]
+        # Only constant capacity can prescribe positive output before solving.
+        # Investment, retirement and multistage capacity terms keep their rows.
+        capacity_value = if capacity isa Number
+            capacity
+        elseif capacity isa AffExpr && all(iszero(coef) for (coef, _) in linear_terms(capacity))
+            constant(capacity)
+        else
+            nothing
+        end
+        for t in 1:T
+            availability = inputs["pP_Max"][y, t]
+            output = if iszero(availability)
+                0.0
+            elseif capacity_value !== nothing
+                availability * capacity_value
+            else
+                nothing
+            end
+            power = EP[:vP][y, t]
+            # force=true removes native bounds. Retain the original equality if
+            # its required value conflicts with any bound, preserving infeasibility.
+            if output !== nothing && isfinite(output) &&
+               (!has_lower_bound(power) || output >= lower_bound(power)) &&
+               (!has_upper_bound(power) || output <= upper_bound(power)) &&
+               (!is_fixed(power) || output == fix_value(power))
+                fix(power, output; force = true)
+            else
+                push!(output_rows, @constraint(EP, power == availability * capacity))
+            end
+        end
+    end
+    EP[:cMustRunOutput] = output_rows
     ##CO2 Polcy Module Must Run Generation by zone
     @expression(EP, eGenerationByMustRun[z = 1:Z, t = 1:T], # the unit is GW
         sum(EP[:vP][y, t] for y in MUST_RUN_BY_ZONE[z]))

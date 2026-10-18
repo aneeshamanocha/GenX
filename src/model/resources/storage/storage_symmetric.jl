@@ -45,5 +45,5 @@ function storage_symmetric!(EP::Model, inputs::Dict, setup::Dict)
         add_similar_to_expression!(expr[SYMMETRIC, :], vCAPRES_discharge[SYMMETRIC, :])
     end
 
-    @constraint(EP, [y in SYMMETRIC, t in 1:T], expr[y, t]<=eTotalCap[y])
+    @constraint(EP, cStorageSymmetricPower[y in SYMMETRIC, t in 1:T], expr[y, t]<=eTotalCap[y])
 end

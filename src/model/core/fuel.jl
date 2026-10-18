@@ -106,14 +106,27 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
 
     fuels = inputs["fuels"]
     fuel_costs = inputs["fuel_costs"]
+    fuel_CO2 = inputs["fuel_CO2"]
     omega = inputs["omega"]
 
     NUM_FUEL = length(fuels)
 
-    # create variable for fuel consumption for output
-    # for resources that only use a single fuel
-    @variable(EP, vFuel[y in SINGLE_FUEL, t = 1:T]>=0)
-    @variable(EP, vStartFuel[y in SINGLE_FUEL, t = 1:T]>=0)
+    # SINGLE_FUEL includes non-fueled resources. Omit their otherwise unused
+    # fuel variables only when no fuel equation, cost, or emissions term can
+    # use them. Committed thermal and Allam resources retain their variables
+    # even with Fuel="None" because their resource modules constrain fuel use.
+    # A supplied nonzero price or CO2 content for "None" must also be retained.
+    FUEL_CONSTRAINED_RESOURCES = BitSet(union(HAS_FUEL, THERM_COMMIT, ALLAM_CYCLE_LOX))
+    SINGLE_FUEL_WITH_VARIABLES = [y for y in SINGLE_FUEL
+                                 if y in FUEL_CONSTRAINED_RESOURCES ||
+                                    !all(iszero, fuel_costs[fuel(gen[y])]) ||
+                                    !iszero(fuel_CO2[fuel(gen[y])])]
+    SINGLE_FUEL_WITH_VARIABLES_set = BitSet(SINGLE_FUEL_WITH_VARIABLES)
+
+    # Retain original resource IDs in the variable containers for reporting
+    # and LP metadata; full plant-level expressions below supply omitted zeros.
+    @variable(EP, vFuel[y in SINGLE_FUEL_WITH_VARIABLES, t = 1:T]>=0)
+    @variable(EP, vStartFuel[y in SINGLE_FUEL_WITH_VARIABLES, t = 1:T]>=0)
 
     # for resources that use multi fuels
     # vMulFuels[y, f, t]: y - resource ID; f - fuel ID; t: time
@@ -151,14 +164,18 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
 
     # time-series fuel consumption by plant 
     @expression(EP, ePlantFuel_generation[y in 1:G, t = 1:T],
-        if y in SINGLE_FUEL_set   # for single fuel plants
+        if y in SINGLE_FUEL_WITH_VARIABLES_set
             EP[:vFuel][y, t]
+        elseif y in SINGLE_FUEL_set
+            0
         else # for multi fuel plants
             sum(EP[:vMulFuels][y, i, t] for i in 1:max_fuels)
         end)
     @expression(EP, ePlantFuel_start[y in 1:G, t = 1:T],
-        if y in SINGLE_FUEL_set   # for single fuel plants
+        if y in SINGLE_FUEL_WITH_VARIABLES_set
             EP[:vStartFuel][y, t]
+        elseif y in SINGLE_FUEL_set
+            0
         else # for multi fuel plants
             sum(EP[:vMulStartFuels][y, i, t] for i in 1:max_fuels)
         end)
@@ -193,7 +210,7 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
 
     @expression(EP, eCFuelStart[y = 1:G, t = 1:T],
         if y in SINGLE_FUEL_set
-            (fuel_costs[fuel(gen[y])][t] * EP[:vStartFuel][y, t])
+            (fuel_costs[fuel(gen[y])][t] * EP[:ePlantFuel_start][y, t])
         else
             sum(EP[:eCFuelOut_multi_start][y, i, t] for i in 1:max_fuels)
         end)
@@ -218,7 +235,7 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
 
     @expression(EP, eCFuelOut[y = 1:G, t = 1:T],
         if y in SINGLE_FUEL_set
-            (fuel_costs[fuel(gen[y])][t] * EP[:vFuel][y, t])
+            (fuel_costs[fuel(gen[y])][t] * EP[:ePlantFuel_generation][y, t])
         else
             sum(EP[:eCFuelOut_multi][y, i, t] for i in 1:max_fuels)
         end)
@@ -250,7 +267,7 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
         return intersect(setdiff(resources_with_fuel(gen, fuels[f]), ALLAM_CYCLE_LOX), SINGLE_FUEL)
     end
     @expression(EP, eFuelConsumption_single[f in 1:NUM_FUEL, t in 1:T],
-        sum(EP[:vFuel][y, t] + EP[:eStartFuel][y, t]
+        sum(EP[:ePlantFuel_generation][y, t] + EP[:eStartFuel][y, t]
         for y in RESOURCES_BY_SINGLE_FUEL[f]))
 
     @expression(EP, eFuelConsumption[f in 1:NUM_FUEL, t in 1:T],
@@ -322,7 +339,16 @@ function fuel!(EP::Model, inputs::Dict, setup::Dict)
     end
 
     # constraints on start up fuel use
-    @constraint(EP, cStartFuel_single[y in intersect(THERM_COMMIT, SINGLE_FUEL), t = 1:T],
+    SINGLE_FUEL_COMMIT = intersect(THERM_COMMIT, SINGLE_FUEL)
+    ZERO_START_FUEL = [y for y in SINGLE_FUEL_COMMIT
+                      if start_fuel_mmbtu_per_mw(gen[y]) == 0]
+    # An exactly zero startup-fuel coefficient forces fuel use to zero even
+    # when the resource starts. Use a fixed bound instead of a singleton row.
+    for y in ZERO_START_FUEL, t in 1:T
+        fix(EP[:vStartFuel][y, t], 0.0; force = true)
+    end
+    @constraint(EP,
+        cStartFuel_single[y in setdiff(SINGLE_FUEL_COMMIT, ZERO_START_FUEL), t = 1:T],
         EP[:vStartFuel][y, t] -
         (cap_size(gen[y]) * EP[:vSTART][y, t] * start_fuel_mmbtu_per_mw(gen[y])).==0)
     if !isempty(MULTI_FUELS)

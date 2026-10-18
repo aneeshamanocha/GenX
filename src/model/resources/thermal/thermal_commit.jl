@@ -165,21 +165,26 @@ function thermal_commit!(EP::Model, inputs::Dict, setup::Dict)
 
     ### Constraints ###
 
+    # Expose finite unit-count limits as variable bounds as well as capacity
+    # coupling rows. In particular, a nonexpandable single unit has at most one
+    # committed/startup/shutdown unit, even when retirement is a decision.
+    thermal_commit_unit_bounds!(EP, inputs)
+
     ### Capacitated limits on unit commitment decision variables (Constraints #1-3)
     @constraints(EP,
         begin
-            [y in THERM_COMMIT, t = 1:T],
+            cThermalCommitCapacity[y in THERM_COMMIT, t = 1:T],
             EP[:vCOMMIT][y, t] <= EP[:eTotalCap][y] / cap_size(gen[y])
-            [y in THERM_COMMIT, t = 1:T],
+            cThermalStartCapacity[y in THERM_COMMIT, t = 1:T],
             EP[:vSTART][y, t] <= EP[:eTotalCap][y] / cap_size(gen[y])
-            [y in THERM_COMMIT, t = 1:T],
+            cThermalShutCapacity[y in THERM_COMMIT, t = 1:T],
             EP[:vSHUT][y, t] <= EP[:eTotalCap][y] / cap_size(gen[y])
         end)
 
     # Commitment state constraint linking startup and shutdown decisions (Constraint #4)
     @constraints(EP,
         begin
-            [y in THERM_COMMIT, t in 1:T],
+            cThermalCommitTransition[y in THERM_COMMIT, t in 1:T],
             EP[:vCOMMIT][y, t] ==
             EP[:vCOMMIT][y, hoursbefore(p, t, 1)] + EP[:vSTART][y, t] - EP[:vSHUT][y, t]
         end)
@@ -189,7 +194,7 @@ function thermal_commit!(EP::Model, inputs::Dict, setup::Dict)
     ## For Start Hours
     # Links last time step with first time step, ensuring position in hour 1 is within eligible ramp of final hour position
     # rampup constraints
-    @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+    @constraint(EP, cThermalCommitRampUp[y in THERM_COMMIT, t in 1:T],
         EP[:vP][y, t] - EP[:vP][y, hoursbefore(p, t, 1)] + regulation_term[y, t] +
         reserves_term[y, t]<=ramp_up_fraction(gen[y]) * cap_size(gen[y]) *
                              (EP[:vCOMMIT][y, t] - EP[:vSTART][y, t])
@@ -201,7 +206,7 @@ function thermal_commit!(EP::Model, inputs::Dict, setup::Dict)
                              min_power(gen[y]) * cap_size(gen[y]) * EP[:vSHUT][y, t])
 
     # rampdown constraints
-    @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+    @constraint(EP, cThermalCommitRampDown[y in THERM_COMMIT, t in 1:T],
         EP[:vP][y, hoursbefore(p, t, 1)] - EP[:vP][y, t] - regulation_term[y, t] +
         reserves_term[y,
             hoursbefore(p, t, 1)]<=ramp_down_fraction(gen[y]) * cap_size(gen[y]) *
@@ -218,29 +223,19 @@ function thermal_commit!(EP::Model, inputs::Dict, setup::Dict)
         # If modeling with regulation and reserves, constraints are established by thermal_commit_operational_reserves() function below
         thermal_commit_operational_reserves!(EP, inputs)
     else
-        @constraints(EP,
-            begin
-                # Minimum stable power generated per technology "y" at hour "t" > Min power
-                [y in THERM_COMMIT, t = 1:T],
-                EP[:vP][y, t] >= min_power(gen[y]) * cap_size(gen[y]) * EP[:vCOMMIT][y, t]
-
-                # Maximum power generated per technology "y" at hour "t" < Max power
-                [y in THERM_COMMIT, t = 1:T],
-                EP[:vP][y, t] <=
-                inputs["pP_Max"][y, t] * cap_size(gen[y]) * EP[:vCOMMIT][y, t]
-            end)
+        thermal_commit_output_limits!(EP, inputs)
     end
 
     ### Minimum up and down times (Constraints #9-10)
     Up_Time = zeros(Int, G)
     Up_Time[THERM_COMMIT] .= Int.(floor.(up_time.(gen[THERM_COMMIT])))
-    @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+    @constraint(EP, cThermalCommitMinUpTime[y in THERM_COMMIT, t in 1:T],
         EP[:vCOMMIT][y,
             t]>=sum(EP[:vSTART][y, u] for u in hoursbefore(p, t, 0:(Up_Time[y] - 1))))
 
     Down_Time = zeros(Int, G)
     Down_Time[THERM_COMMIT] .= Int.(floor.(down_time.(gen[THERM_COMMIT])))
-    @constraint(EP, [y in THERM_COMMIT, t in 1:T],
+    @constraint(EP, cThermalCommitMinDownTime[y in THERM_COMMIT, t in 1:T],
         EP[:eTotalCap][y] / cap_size(gen[y]) -
         EP[:vCOMMIT][y,
             t]>=sum(EP[:vSHUT][y, u] for u in hoursbefore(p, t, 0:(Down_Time[y] - 1))))
@@ -266,6 +261,78 @@ function thermal_commit!(EP::Model, inputs::Dict, setup::Dict)
         # subtract parasitic power from power balance
         fusion_adjust_power_balance!(EP, inputs, gen)
     end
+end
+
+"""Add thermal output limits without operational reserves.
+
+Identical minimum/maximum coefficients define one equality, avoiding two
+opposing inequality multipliers. Use exact equality: near-equal coefficients
+must retain their original feasible operating range.
+"""
+function thermal_commit_output_limits!(EP::Model, inputs::Dict)
+    gen = inputs["RESOURCES"]
+    # Register equation families for exported row metadata. The row algebra and
+    # creation order are unchanged; arrays contain only the applicable rows.
+    minimum_rows, maximum_rows, equality_rows = ConstraintRef[], ConstraintRef[], ConstraintRef[]
+    for y in inputs["THERM_COMMIT"]
+        capacity = cap_size(gen[y])
+        minimum = min_power(gen[y]) * capacity
+        for t in 1:inputs["T"]
+            maximum = inputs["pP_Max"][y, t] * capacity
+            if minimum == maximum
+                push!(equality_rows, @constraint(EP, EP[:vP][y, t] == minimum * EP[:vCOMMIT][y, t]))
+            else
+                push!(minimum_rows, @constraint(EP, EP[:vP][y, t] >= minimum * EP[:vCOMMIT][y, t]))
+                push!(maximum_rows, @constraint(EP, EP[:vP][y, t] <= maximum * EP[:vCOMMIT][y, t]))
+            end
+        end
+    end
+    EP[:cThermalCommitMinOutput] = minimum_rows
+    EP[:cThermalCommitMaxOutput] = maximum_rows
+    EP[:cThermalCommitFixedOutput] = equality_rows
+    return nothing
+end
+
+"""Expose bounds already implied by capacity and existing variable bounds.
+
+Keep all capacity coupling constraints: these bounds do not fix commitment or
+retirement. If capacity has an unbounded positive investment term (or an
+unbounded multistage term), leave the operational upper bounds unchanged.
+"""
+function thermal_commit_unit_bounds!(EP::Model, inputs::Dict)
+    gen = inputs["RESOURCES"]
+    for y in inputs["THERM_COMMIT"]
+        units = EP[:eTotalCap][y] / cap_size(gen[y])
+        upper = units isa Number ? Float64(units) : constant(units)
+        if !(units isa Number)
+            for (coefficient, variable) in linear_terms(units)
+                iszero(coefficient) && continue
+                bound = if is_fixed(variable)
+                    fix_value(variable)
+                elseif coefficient > 0
+                    has_upper_bound(variable) ? upper_bound(variable) : Inf
+                else
+                    has_lower_bound(variable) ? lower_bound(variable) : -Inf
+                end
+                # Round outwards so arithmetic cannot accidentally tighten the
+                # mathematical bound. Zero terms need no rounding.
+                term = coefficient * bound
+                if !iszero(term)
+                    upper = nextfloat(upper + nextfloat(term))
+                end
+            end
+        end
+        isfinite(upper) && upper >= 0 || continue
+        upper = nextfloat(upper)
+        for symbol in (:vCOMMIT, :vSTART, :vSHUT), t in 1:inputs["T"]
+            variable = EP[symbol][y, t]
+            is_fixed(variable) && continue
+            if !has_upper_bound(variable) || upper < upper_bound(variable)
+                set_upper_bound(variable, upper)
+            end
+        end
+    end
+    return nothing
 end
 
 @doc raw"""

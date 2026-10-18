@@ -83,7 +83,9 @@ function co2_cap!(EP::Model, inputs::Dict, setup::Dict)
 
         add_to_expression!(EP[:eObj], eCTotalCO2CapSlack)
     else
-        @variable(EP, vCO2Cap_slack[cap = 1:inputs["NCO2Cap"]]==0)
+        # Slack is disabled. Preserve the indexed quantity used below without
+        # creating a fixed-zero variable that survives no-policy row removal.
+        @expression(EP, vCO2Cap_slack[cap = 1:inputs["NCO2Cap"]], 0.0)
     end
 
     ### Constraints ###
@@ -142,7 +144,8 @@ function co2_cap_subperiod!(EP::Model, inputs::Dict, setup::Dict)
 
         add_to_expression!(EP[:eObj], eCTotalCO2CapSlack)
     else
-        @variable(EP, vCO2Cap_slack[cap = 1:inputs["NCO2Cap"]]==0)
+        # Match the monolithic formulation: disabled slack is a constant.
+        @expression(EP, vCO2Cap_slack[cap = 1:inputs["NCO2Cap"]], 0.0)
     end
     @variable(EP,vCO2budget[[w],1:inputs["NCO2Cap"]])
 

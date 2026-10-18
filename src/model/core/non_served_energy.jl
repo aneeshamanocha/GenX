@@ -50,6 +50,10 @@ Additionally, total demand curtailed in each time step cannot exceed total deman
 	\hspace{4 cm}  \forall t \in \mathcal{T}, z\in \mathcal{Z}
 \end{aligned}
 ```
+With one segment allowing exactly 100% curtailment, these limits coincide.
+Only the total-demand constraint is created in that case.
+Zero demand or an exactly zero segment share fixes the corresponding NSE variable
+to zero; its segment constraint is omitted, while the total-demand row is retained.
 """
 function non_served_energy!(EP::Model, inputs::Dict, setup::Dict)
     println("Non-served Energy Module")
@@ -62,6 +66,15 @@ function non_served_energy!(EP::Model, inputs::Dict, setup::Dict)
 
     # Non-served energy/curtailed demand in the segment "s" at hour "t" in zone "z"
     @variable(EP, vNSE[s = 1:SEG, t = 1:T, z = 1:Z]>=0)
+    demand = inputs["pD"]
+    max_curtail_share = inputs["pMax_D_Curtail"]
+    # Nonnegative NSE is forced to zero by either of these exact zero limits.
+    # Keep the variables available for power balance and output reporting.
+    for s in 1:SEG, t in 1:T, z in 1:Z
+        if demand[t, z] == 0 || max_curtail_share[s] == 0
+            fix(vNSE[s, t, z], 0.0; force = true)
+        end
+    end
 
     ### Expressions ###
 
@@ -102,11 +115,17 @@ function non_served_energy!(EP::Model, inputs::Dict, setup::Dict)
     ### Constratints ###
 
     # Demand curtailed in each segment of curtailable demands cannot exceed maximum allowable share of demand
-    @constraint(EP,
-        cNSEPerSeg[s = 1:SEG, t = 1:T, z = 1:Z],
-        vNSE[s, t, z]<=inputs["pMax_D_Curtail"][s] * inputs["pD"][t, z])
+    # One segment allowing exactly all demand duplicates cMaxNSE. Keep cMaxNSE
+    # for reliability reporting; near-equal shares still retain their own limit.
+    if !(SEG == 1 && inputs["pMax_D_Curtail"][1] == 1.0)
+        @constraint(EP,
+            cNSEPerSeg[s = 1:SEG, t = 1:T, z = 1:Z;
+                      demand[t, z] != 0 && max_curtail_share[s] != 0],
+            vNSE[s, t, z]<=inputs["pMax_D_Curtail"][s] * inputs["pD"][t, z])
+    end
 
     # Total demand curtailed in each time step (hourly) cannot exceed total demand
+    # Retain every row, including zero demand, for reliability and Benders reporting.
     @constraint(EP,
         cMaxNSE[t = 1:T, z = 1:Z],
         sum(vNSE[s, t, z] for s in 1:SEG)<=inputs["pD"][t, z])
