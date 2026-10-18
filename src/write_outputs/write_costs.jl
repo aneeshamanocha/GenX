@@ -175,10 +175,12 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
         tempCFix += eCFix
         tempCTotal += eCFix
 
-        tempCVar = sum(value.(EP[:eCVar_out][Y_ZONE, :]))
+        # Resource-free zones contribute zero. Fuel cleanup can leave mixed
+        # constant/expression containers whose empty slices have eltype Any.
+        tempCVar = sum(value.(EP[:eCVar_out][Y_ZONE, :]); init = 0.0)
         tempCTotal += tempCVar
 
-        tempCFuel = sum(value.(EP[:ePlantCFuelOut][Y_ZONE, :]))
+        tempCFuel = sum(value.(EP[:ePlantCFuelOut][Y_ZONE, :]); init = 0.0)
         tempCTotal += tempCFuel
 
         if !isempty(STOR_ALL_ZONE)
