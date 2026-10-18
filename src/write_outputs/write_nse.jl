@@ -13,8 +13,10 @@ function write_nse(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
         AnnualSum = zeros(SEG * Z))
     nse = zeros(SEG * Z, T)
     scale_factor = setup["ParameterScale"] == 1 ? ModelScalingFactor : 1
-    for z in 1:Z
-        nse[((z - 1) * SEG + 1):(z * SEG), :] = value.(EP[:vNSE])[:, :, z] * scale_factor
+    vNSE = EP[:vNSE]
+    # Extract each value once, preserving segment-within-zone output order.
+    for t in 1:T, z in 1:Z, s in 1:SEG
+        nse[(z - 1) * SEG + s, t] = value(vNSE[s, t, z]) * scale_factor
     end
     dfNse.AnnualSum .= nse * inputs["omega"]
 

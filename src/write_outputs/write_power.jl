@@ -8,20 +8,16 @@ function write_power(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
     resources = inputs["RESOURCE_NAMES"]    # Resource names
     zones = zone_id.(gen)
 
-    G = inputs["G"]     # Number of resources (generators, storage, DR, and DERs)
-    T = inputs["T"]     # Number of time steps (hours)
-    
     weight = inputs["omega"]
     scale_factor = setup["ParameterScale"] == 1 ? ModelScalingFactor : 1
 
     # Power injected by each resource in each time step
     power = value.(EP[:vP])
-    power *= scale_factor
+    power .*= scale_factor
 
     df = DataFrame(Resource = resources,
         Zone = zones,
-        AnnualSum = zeros(G))
-    df.AnnualSum .= power * weight
+        AnnualSum = power * weight)
 
     write_temporal_data(df, power, path, setup, "power")
     return df
