@@ -136,26 +136,15 @@ function transmission!(EP::Model, inputs::Dict, setup::Dict)
 
     ## Transmission power flow and loss related expressions:
 
-    I, J, V = findnz(inputs["pNet_Map"])  # I=row index, J=col index, V=value
-    nz_by_col = [Vector{Tuple{Int, Float64}}() for _ in 1:Z]
-    nz_by_col_loss_lines = [Vector{Tuple{Int, Float64}}() for _ in 1:Z]
-
-    for k in eachindex(V)
-        push!(nz_by_col[J[k]], (I[k], V[k]))
-        if I[k] in LOSS_LINES
-            push!(nz_by_col_loss_lines[J[k]], (I[k], V[k]))
-        end
-    end
-
     # Net power flow outgoing from zone "z" at hour "t" in MW
     @expression(EP,
         eNet_Export_Flows[z = 1:Z, t = 1:T],
-        sum(v * vFLOW[Int(l), t] for (l, v) in nz_by_col[z]))
+        sum(inputs["pNet_Map"][l, z] * vFLOW[l, t] for l in 1:L))
 
     # Losses from power flows into or out of zone "z" in MW
     @expression(EP,
         eLosses_By_Zone[z = 1:Z, t = 1:T],
-        sum(abs(v) * (1 / 2) * vTLOSS[l, t] for (l, v) in nz_by_col_loss_lines[z]))
+        sum(abs(inputs["pNet_Map"][l, z]) * (1 / 2) * vTLOSS[l, t] for l in LOSS_LINES))
 
     ## Power Balance Expressions ##
 

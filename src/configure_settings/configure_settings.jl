@@ -39,7 +39,9 @@ function default_settings()
         "PoliciesFolder" => "policies",
         "Benders" => 0,
         "ObjScale" => 1,
-        "LDES_Feasible" => 0,)
+        "LDES_Feasible" => 0,
+        "DiscreteInvestments" => 0,
+        "Bilinear_DC_OPF" => 0)
 end
 
 @doc raw"""

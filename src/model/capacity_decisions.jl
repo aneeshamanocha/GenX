@@ -28,6 +28,12 @@ function discharge_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
     COMMIT = inputs["COMMIT"] # Set of all resources eligible for unit commitment
     RETROFIT_CAP = inputs["RETROFIT_CAP"]  # Set of all resources being retrofitted
 
+    # Resources whose capacity is built in integer multiples of Cap_Size: either unit
+    # commitment resources or resources flagged for integer (discrete) capacity builds.
+    # For these, capacity accounting scales vCAP/vRETCAP by Cap_Size.
+    INTEGER_CAP = inputs["NEW_CAP_DISCRETE_BUILD"] # Set of resources with integer capacity builds
+    CAP_SIZE_SCALED = union(COMMIT, INTEGER_CAP)
+
     ### Variables ###
 
     # Retired capacity of resource "y" from existing capacity
@@ -35,6 +41,11 @@ function discharge_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
 
     # New installed capacity of resource "y"
     @variable(EP, vCAP[y in NEW_CAP]>=0)
+
+    if setup["DiscreteInvestments"] == 1
+        NEW_CAP_DISCRETE_BUILD = inputs["NEW_CAP_DISCRETE_BUILD"]
+        RET_CAP_DISCRETE_BUILD = intersect(RET_CAP, NEW_CAP_DISCRETE_BUILD)
+    end
 
     # Allam cycle specific. By default, i = 1 -> sCO2Turbine; i = 2 -> ASU; i = 3 -> LOX
     # retired capacity of Allam cycle 
@@ -91,33 +102,33 @@ function discharge_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
 
     @expression(EP, eTotalCap[y in 1:G],
         if y in intersect(NEW_CAP, RET_CAP, RETROFIT_CAP) # Resources eligible for new capacity, retirements and being retrofitted
-            if y in COMMIT
+            if y in CAP_SIZE_SCALED
                 eExistingCap[y] +
                 cap_size(gen[y]) * (EP[:vCAP][y] - EP[:vRETCAP][y] - EP[:vRETROFITCAP][y])
             else
                 eExistingCap[y] + EP[:vCAP][y] - EP[:vRETCAP][y] - EP[:vRETROFITCAP][y]
             end
         elseif y in intersect(setdiff(RET_CAP, NEW_CAP), setdiff(RET_CAP, RETROFIT_CAP)) # Resources eligible for only capacity retirements
-            if y in COMMIT
+            if y in CAP_SIZE_SCALED
                 eExistingCap[y] - cap_size(gen[y]) * EP[:vRETCAP][y]
             else
                 eExistingCap[y] - EP[:vRETCAP][y]
             end
         elseif y in setdiff(intersect(RET_CAP, NEW_CAP), RETROFIT_CAP) # Resources eligible for retirement and new capacity
-            if y in COMMIT
+            if y in CAP_SIZE_SCALED
                 eExistingCap[y] + cap_size(gen[y]) * (EP[:vCAP][y] - EP[:vRETCAP][y])
             else
                 eExistingCap[y] + EP[:vCAP][y] - EP[:vRETCAP][y]
             end
         elseif y in setdiff(intersect(RET_CAP, RETROFIT_CAP), NEW_CAP) # Resources eligible for retirement and retrofitting
-            if y in COMMIT
+            if y in CAP_SIZE_SCALED
                 eExistingCap[y] -
                 cap_size(gen[y]) * (EP[:vRETROFITCAP][y] + EP[:vRETCAP][y])
             else
                 eExistingCap[y] - (EP[:vRETROFITCAP][y] + EP[:vRETCAP][y])
             end
         elseif y in intersect(setdiff(NEW_CAP, RET_CAP), setdiff(NEW_CAP, RETROFIT_CAP))  # Resources eligible for only new capacity
-            if y in COMMIT
+            if y in CAP_SIZE_SCALED
                 eExistingCap[y] + cap_size(gen[y]) * EP[:vCAP][y]
             else
                 eExistingCap[y] + EP[:vCAP][y]
@@ -200,10 +211,14 @@ end
 function transmission_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
     L = inputs["L"]     # Number of transmission lines
     NetworkExpansion = setup["NetworkExpansion"]
+    DiscreteInvestments = setup["DiscreteInvestments"]
 
     if NetworkExpansion == 1
         # Network lines and zones that are expandable have non-negative maximum reinforcement inputs
         EXPANSION_LINES = inputs["EXPANSION_LINES"]
+        if DiscreteInvestments == 1
+            DISCRETE_BUILD_LINES = inputs["DISCRETE_BUILD_LINES"]
+        end
     end
 
     ### Variables ###
@@ -211,6 +226,9 @@ function transmission_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
     if NetworkExpansion == 1
         # Transmission network capacity reinforcements per line
         @variable(EP, vNEW_TRANS_CAP[l in EXPANSION_LINES]>=0)
+        if DiscreteInvestments == 1
+            @variable(EP, vNEW_TRANS_LINES[l in DISCRETE_BUILD_LINES])
+        end
     end
 
     ### Expressions ###
@@ -225,6 +243,12 @@ function transmission_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
             else
                 eTransMax[l] + EP[:vZERO]
             end)
+
+        if DiscreteInvestments == 1
+            for l in DISCRETE_BUILD_LINES
+                add_to_expression!(eAvail_Trans_Cap[l], vNEW_TRANS_LINES[l] * inputs["Line_Reinforcement_Cap_Size"][l])
+            end
+        end
     else
         @expression(EP, eAvail_Trans_Cap[l = 1:L], eTransMax[l]+EP[:vZERO])
     end
@@ -240,10 +264,6 @@ function vre_stor_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
 
     # Make sure to set total cap vars
     gen = inputs["RESOURCES"]
-
-    G = inputs["G"] # Number of resources (generators, storage, DR, and DERs)
-    T = inputs["T"] # Number of time steps (hours)
-    Z = inputs["Z"] # Number of zones
 
     gen_VRE_STOR = gen.VreStorage
 
@@ -270,28 +290,6 @@ function vre_stor_capacity_decisions!(EP::Model, inputs::Dict, setup::Dict)
     NEW_CAP_ELEC = inputs["NEW_CAP_ELEC"]
     RET_CAP_ELEC = inputs["RET_CAP_ELEC"]
 
-    # Policy flags
-    EnergyShareRequirement = setup["EnergyShareRequirement"]
-    CapacityReserveMargin = setup["CapacityReserveMargin"]
-    MinCapReq = setup["MinCapReq"]
-    MaxCapReq = setup["MaxCapReq"]
-    IncludeLossesInESR = setup["IncludeLossesInESR"]
-    OperationalReserves = setup["OperationalReserves"]
-
-    DC_DISCHARGE = inputs["VS_STOR_DC_DISCHARGE"]
-    DC_CHARGE = inputs["VS_STOR_DC_CHARGE"]
-    AC_DISCHARGE = inputs["VS_STOR_AC_DISCHARGE"]
-    AC_CHARGE = inputs["VS_STOR_AC_CHARGE"]
-    VS_SYM_DC = inputs["VS_SYM_DC"]
-    VS_SYM_AC = inputs["VS_SYM_AC"]
-    VS_LDS = inputs["VS_LDS"]
-
-    START_SUBPERIODS = inputs["START_SUBPERIODS"]
-    INTERIOR_SUBPERIODS = inputs["INTERIOR_SUBPERIODS"]
-    hours_per_subperiod = inputs["hours_per_subperiod"]     # total number of hours per subperiod
-    rep_periods = inputs["REP_PERIOD"]
-
-    MultiStage = setup["MultiStage"]
     if !isempty(DC)
         ### INVERTER VARIABLES ###
         @variables(EP, begin
@@ -481,7 +479,6 @@ function charge_vre_stor_capacity_decisions!(EP::Model, inputs::Dict, setup::Dic
     gen = inputs["RESOURCES"]
     gen_VRE_STOR = gen.VreStorage
 
-    T = inputs["T"]
     VS_ASYM_DC_CHARGE = inputs["VS_ASYM_DC_CHARGE"]
     VS_ASYM_AC_CHARGE = inputs["VS_ASYM_AC_CHARGE"]
     VS_ASYM_DC_DISCHARGE = inputs["VS_ASYM_DC_DISCHARGE"]
@@ -659,9 +656,9 @@ function charge_vre_stor_capacity_decisions!(EP::Model, inputs::Dict, setup::Dic
         end)
 
         # DEV NOTES: Uncomment when adding Multistage support
-        if MultiStage == 1
-            @variable(EP, vEXISTINGCAPCHARGEAC[y in VS_ASYM_AC_CHARGE]>=0)
-        end
+        # if MultiStage == 1
+        #     @variable(EP, vEXISTINGCAPCHARGEAC[y in VS_ASYM_AC_CHARGE]>=0)
+        # end
 
         ### EXPRESSIONS ###
         # DEV NOTES: Uncomment when adding Multistage support
